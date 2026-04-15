@@ -44,6 +44,10 @@ const EmployeeSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    efficiency: {
+        type: Number,
+        default: 100 // Efficiency percentage (default 100%)
+    },
     created_at: {
         type: Date,
         default: Date.now

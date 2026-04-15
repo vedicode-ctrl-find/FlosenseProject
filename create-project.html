@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Project | FlowSense</title>
+    <meta name="description" content="Create a new project and assign a Team Lead with intelligent workload analysis on FlowSense.">
+    <link rel="stylesheet" href="css/project-modules.css">
+</head>
+<body>
+
+<!-- ── Navbar ── -->
+<nav class="navbar">
+    <a href="dashboard.html" class="nav-logo">⚡ FlowSense</a>
+    <ul class="nav-links">
+        <li><a href="dashboard.html">Dashboard</a></li>
+        <li><a href="create-project.html" class="active">Projects</a></li>
+        <li><a href="#">Team</a></li>
+        <li><a href="#">Insights</a></li>
+        <li><a href="#">Profile</a></li>
+    </ul>
+    <div class="nav-avatar" id="nav-avatar">A</div>
+</nav>
+
+<!-- ── Page ── -->
+<div class="page-container">
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <a href="dashboard.html">Dashboard</a>
+        <span>›</span>
+        <a href="#">Projects</a>
+        <span>›</span>
+        <span>Create New</span>
+    </div>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1>Create New Project</h1>
+        <p>Define project details and assign a Team Lead with smart workload analysis</p>
+    </div>
+
+    <!-- Form Card -->
+    <div class="card">
+        <form id="project-form" novalidate>
+
+            <div class="form-grid">
+
+                <!-- Project Name -->
+                <div class="form-group">
+                    <label for="proj-name">Project Name <span class="req">*</span></label>
+                    <input type="text" id="proj-name" class="form-control"
+                           placeholder="Enter project name" required autocomplete="off">
+                </div>
+
+                <!-- Deadline -->
+                <div class="form-group">
+                    <label for="proj-deadline">Project Deadline <span class="req">*</span></label>
+                    <input type="date" id="proj-deadline" class="form-control" required>
+                </div>
+
+                <!-- Description -->
+                <div class="form-group full-width">
+                    <label for="proj-desc">Project Description</label>
+                    <textarea id="proj-desc" class="form-control"
+                              placeholder="Describe the project objectives, scope, and required skills (e.g. Frontend, Backend, QA)…"></textarea>
+                </div>
+
+                <!-- Team Lead -->
+                <div class="form-group full-width">
+                    <label for="proj-lead">Select Team Lead <span class="req">*</span></label>
+                    <div class="select-wrapper">
+                        <select id="proj-lead" class="form-control" required>
+                            <option value="">— Choose a Team Lead —</option>
+                        </select>
+                    </div>
+
+                    <!-- Overload Warning -->
+                    <div class="alert-box warning" id="lead-warning">
+                        <span class="alert-icon">⚠️</span>
+                        <div>
+                            <strong>Overload Detected!</strong>
+                            This employee is currently overloaded. Consider selecting another Team Lead.
+                            <div class="suggestion-chips" id="lead-suggestions"></div>
+                        </div>
+                    </div>
+
+                    <!-- Balanced notice -->
+                    <div class="alert-box info" id="lead-info" style="margin-top:10px">
+                        <span class="alert-icon">ℹ️</span>
+                        <div id="lead-info-text"></div>
+                    </div>
+                </div>
+
+                <!-- Priority -->
+                <div class="form-group full-width">
+                    <label>Project Priority <span class="req">*</span></label>
+                    <div class="priority-group">
+                        <button type="button" class="priority-btn" data-p="Low">
+                            <span class="pdot"></span> Low
+                        </button>
+                        <button type="button" class="priority-btn active" data-p="Medium">
+                            <span class="pdot"></span> Medium
+                        </button>
+                        <button type="button" class="priority-btn" data-p="High">
+                            <span class="pdot"></span> High
+                        </button>
+                    </div>
+                    <input type="hidden" id="proj-priority" value="Medium">
+                </div>
+
+            </div><!-- /form-grid -->
+
+            <!-- Actions -->
+            <div class="action-bar">
+                <a href="dashboard.html" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary" id="submit-btn">
+                    ✦ Create Project
+                </button>
+            </div>
+
+        </form>
+    </div><!-- /card -->
+
+</div><!-- /page-container -->
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="js/create-project.js"></script>
+</body>
+</html>

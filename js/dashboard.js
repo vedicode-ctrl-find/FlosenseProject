@@ -107,35 +107,8 @@ function recalculateState() {
 
 // 1. Create Project
 function openProjectModal() {
-    const modal = document.createElement('div');
-    modal.id = 'project-modal';
-    modal.className = "modal-overlay";
-    modal.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); backdrop-filter:blur(4px); z-index:1000; display:flex; align-items:center; justify-content:center;";
-    modal.onclick = (e) => { if(e.target === modal) modal.remove(); };
-
-    modal.innerHTML = `
-        <div class="card" style="width:450px; animation: slideUp 0.3s ease;">
-            <h2 style="margin-bottom:20px;">Create New Project</h2>
-            <form onsubmit="handleProjectSubmit(event)">
-                <div class="form-group">
-                    <label>Project Name</label>
-                    <input type="text" id="p-name" class="styled-input" placeholder="e.g. Project Orion" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; margin-bottom:15px;">
-                </div>
-                <div class="form-group">
-                    <label>Lead Manager</label>
-                    <select id="p-lead" class="styled-input" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; margin-bottom:15px;">
-                        ${FlowSenseState.employees.map(e => `<option value="${e.name}">${e.name}</option>`).join('')}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea id="p-desc" class="styled-input" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; margin-bottom:20px;"></textarea>
-                </div>
-                <button type="submit" class="btn btn-primary">Launch Project</button>
-            </form>
-        </div>
-    `;
-    document.body.appendChild(modal);
+    // Instead of a simple modal, we redirect to our high-fidelity flow
+    window.location.href = 'create-project.html';
 }
 
 function handleProjectSubmit(e) {
