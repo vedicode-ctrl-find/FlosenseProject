@@ -11,9 +11,12 @@ connectDB();
 
 const app = express();
 
+const path = require('path');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(__dirname));
 
 // Load routes
 const authRoutes = require('./routes/auth');
@@ -23,7 +26,7 @@ app.use('/api/auth', authRoutes);
 
 // Root route
 app.get('/', (req, res) => {
-    res.send('FlowSense API is running...');
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;

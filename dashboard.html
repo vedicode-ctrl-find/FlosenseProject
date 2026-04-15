@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | FlowSense</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <i class="fas fa-wind logo-icon"></i>
+            <span>FlowSense</span>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-view="overview" onclick="loadView('overview')">
+                <i class="fas fa-th-large"></i>
+                <span>Overview</span>
+            </a>
+            <a href="#" class="nav-item" data-view="projects" onclick="loadView('projects')">
+                <i class="fas fa-project-diagram"></i>
+                <span>Projects</span>
+            </a>
+            <a href="#" class="nav-item" id="nav-team" data-view="team" onclick="loadView('team')">
+                <i class="fas fa-users"></i>
+                <span>Team Hub</span>
+            </a>
+            <a href="#" class="nav-item" data-view="tasks" onclick="loadView('tasks')">
+                <i class="fas fa-tasks"></i>
+                <span>Optimizer</span>
+            </a>
+            <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
+                <i class="fas fa-chart-line"></i>
+                <span>Insights</span>
+            </a>
+            <a href="#" class="nav-item" id="nav-org" data-view="organization" onclick="loadView('organization')">
+                <i class="fas fa-building"></i>
+                <span>Organization</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-profile">
+                <img src="https://ui-avatars.com/api/?name=User&background=8b5cf6&color=fff" alt="User" id="user-avatar">
+                <div class="user-info">
+                    <p class="user-name" id="user-name-display">Loading...</p>
+                    <p class="user-role" id="user-role-display">Role</p>
+                </div>
+            </div>
+            <button class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="search-bar">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search tasks, members, or projects...">
+            </div>
+            <div class="top-actions">
+                <div class="notification-bell" onclick="toggleSuggestions()">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge" id="suggestion-count">!</span>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-quick-action" onclick="openProjectModal()">
+                    <i class="fas fa-plus"></i>
+                    <span>New Project</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- View Containers -->
+        <div id="view-container" class="view-animate">
+            <!-- Dynamic Content Injected Here -->
+        </div>
+
+        <!-- Suggestion Drawer (The Smart System) -->
+        <div id="suggestion-drawer" class="drawer">
+            <div class="drawer-header">
+                <h3><i class="fas fa-magic"></i> Smart Suggestions</h3>
+                <button class="close-drawer" onclick="toggleSuggestions()">✕</button>
+            </div>
+            <div class="drawer-content" id="suggestions-list">
+                <!-- Suggestions will be loaded here -->
+            </div>
+        </div>
+    </main>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

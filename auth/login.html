@@ -222,11 +222,7 @@
                     
                     // Redirect after short delay
                     setTimeout(() => {
-                        if (data.data.role === 'employee') {
-                            window.location.href = '../index.html'; 
-                        } else {
-                            window.location.href = '../index.html'; 
-                        }
+                        window.location.href = '../dashboard.html'; 
                     }, 1500);
                 } else {
                     showToast(data.message || 'Login failed. Please check your credentials.', 'error');
