@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Creation & Assignment | FlowSense</title>
+    <meta name="description" content="Assign tasks intelligently based on skills and workload.">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/assign-task.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body light-theme">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <i class="fas fa-wind logo-icon"></i>
+            <span>FlowSense</span>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <a href="dashboard.html" class="nav-item">
+                <i class="fas fa-th-large"></i>
+                <span>Overview</span>
+            </a>
+            <a href="dashboard.html" class="nav-item">
+                <i class="fas fa-project-diagram"></i>
+                <span>Projects</span>
+            </a>
+            <a href="dashboard.html" class="nav-item" id="nav-team">
+                <i class="fas fa-users"></i>
+                <span>Team Hub</span>
+            </a>
+            <a href="assign-task.html" class="nav-item active">
+                <i class="fas fa-tasks"></i>
+                <span>Optimizer</span>
+            </a>
+            <a href="dashboard.html" class="nav-item">
+                <i class="fas fa-chart-line"></i>
+                <span>Insights</span>
+            </a>
+            <a href="dashboard.html" class="nav-item" id="nav-org">
+                <i class="fas fa-building"></i>
+                <span>Organization</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-profile">
+                <img src="https://ui-avatars.com/api/?name=User&background=8b5cf6&color=fff" alt="User" id="user-avatar">
+                <div class="user-info">
+                    <p class="user-name" id="user-name-display">Loading...</p>
+                    <p class="user-role" id="user-role-display">Role</p>
+                </div>
+            </div>
+            <button class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="search-bar">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search tasks, members, or projects...">
+            </div>
+            <div class="top-actions">
+                <div class="notification-bell">
+                    <i class="fas fa-bell"></i>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="window.location.href='create-project.html'">
+                    <i class="fas fa-plus"></i>
+                    <span>New Project</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- View Container -->
+        <div id="view-container" class="view-animate">
+            <div class="assign-task-header">
+                <h2>Create & Assign Task</h2>
+                <p>Assign tasks intelligently based on skills and workload</p>
+            </div>
+
+            <div class="assign-task-grid">
+                <!-- Left: Task Creation Form -->
+                <div class="card form-card">
+                    <form id="task-form">
+                        <div class="form-group full-width">
+                            <label>Task Name <span class="req">*</span></label>
+                            <input type="text" id="task-name" class="styled-input" placeholder="Enter task name" required>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Task Description</label>
+                            <textarea id="task-desc" class="styled-input" placeholder="Describe the task briefly"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Required Skill</label>
+                                <select id="task-skill" class="styled-input">
+                                    <option value="">-- Select Skill --</option>
+                                    <option value="Frontend">Frontend</option>
+                                    <option value="Backend">Backend</option>
+                                    <option value="Testing">Testing</option>
+                                    <option value="Database">Database</option>
+                                    <option value="DevOps">DevOps</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Project <span class="req">*</span></label>
+                                <select id="task-project" class="styled-input" required>
+                                    <option value="">Loading projects...</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Deadline <span class="req">*</span></label>
+                                <input type="date" id="task-deadline" class="styled-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Estimated Hours <span class="req">*</span></label>
+                                <input type="number" id="task-hours" class="styled-input" placeholder="Enter estimated effort in hours" min="1" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label>Assign Employee <span class="req">*</span></label>
+                            <select id="task-assignee" class="styled-input" required>
+                                <option value="">-- Select Employee --</option>
+                                <!-- Populated dynamically -->
+                            </select>
+                        </div>
+
+                        <!-- Real-Time Smart Feedback -->
+                        <div id="smart-feedback-alert" class="feedback-alert hidden">
+                            <div class="alert-icon"></div>
+                            <div class="alert-text"></div>
+                        </div>
+
+                        <div class="action-bar">
+                            <button type="button" class="btn btn-secondary" onclick="window.location.href='dashboard.html'">Cancel</button>
+                            <button type="submit" class="btn btn-primary" id="btn-submit-task">Assign Task</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Right: Smart Suggestion Panel / Insights -->
+                <div class="card insights-card">
+                    <div class="insights-header">
+                        <h3><i class="fas fa-magic"></i> Recommended Assignments</h3>
+                    </div>
+                    <div id="smart-suggestions-list" class="suggestions-list">
+                        <p class="empty-state">Select a skill and enter estimated hours to see smart recommendations based on current workload and efficiency.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Post-Assignment Smart Popup overlay -->
+    <div class="modal-overlay" id="post-assign-modal" style="display: none;">
+         <div class="modal-content">
+             <div class="modal-header">
+                 <h3><i class="fas fa-exclamation-circle text-red"></i> Overload Warning</h3>
+             </div>
+             <div class="modal-body" id="post-assign-body">
+                 <!-- Injected dynamically -->
+             </div>
+             <div class="modal-actions">
+                 <button class="btn btn-secondary" id="btn-keep-assign">Keep Assignment</button>
+                 <button class="btn btn-primary" id="btn-accept-suggestion">Accept Suggestion</button>
+             </div>
+         </div>
+    </div>
+    
+    <!-- Toast Message Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="js/assign-task.js"></script>
+</body>
+</html>

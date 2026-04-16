@@ -18,6 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let employees = [];
 
+    // Check Role
+    const role = localStorage.getItem('userRole');
+    if (role === 'employee') {
+        alert("Access Denied: Only Company Admins can create projects.");
+        window.location.href = 'dashboard.html';
+        return;
+    }
+
     // 1. Fetch Employees for Lead Dropdown
     const fetchEmployees = async () => {
         try {
@@ -142,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Simulate backend delay then redirect
         setTimeout(() => {
-            window.location.href = 'team-setup.html';
+            window.location.href = 'dashboard.html';
         }, 1200);
     });
 

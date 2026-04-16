@@ -35,9 +35,10 @@ function checkAuth() {
     document.getElementById('user-role-display').innerText = role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Team Member';
     
     if (role === 'employee') {
-        document.getElementById('nav-team').style.display = 'none';
-        document.getElementById('nav-org').style.display = 'none';
         document.getElementById('btn-quick-action').style.display = 'none';
+        renderEmployeeSidebar();
+    } else {
+        renderCompanySidebar();
     }
 
     // Attach Search Listener
@@ -50,6 +51,46 @@ function checkAuth() {
     }
 
     renderCurrentView();
+}
+
+function renderCompanySidebar() {
+    const nav = document.getElementById('sidebar-nav');
+    nav.innerHTML = `
+        <a href="#" class="nav-item active" data-view="overview" onclick="loadView('overview')">
+            <i class="fas fa-th-large"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="#" class="nav-item" data-view="projects" onclick="loadView('projects')">
+            <i class="fas fa-project-diagram"></i>
+            <span>Projects</span>
+        </a>
+        <a href="#" class="nav-item" data-view="team" onclick="loadView('team')">
+            <i class="fas fa-users"></i>
+            <span>Team Hub</span>
+        </a>
+        <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
+            <i class="fas fa-chart-line"></i>
+            <span>Insights</span>
+        </a>
+    `;
+}
+
+function renderEmployeeSidebar() {
+    const nav = document.getElementById('sidebar-nav');
+    nav.innerHTML = `
+        <a href="#" class="nav-item active" data-view="overview" onclick="loadView('overview')">
+            <i class="fas fa-th-large"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="#" class="nav-item" data-view="projects" onclick="loadView('projects')">
+            <i class="fas fa-project-diagram"></i>
+            <span>My Projects</span>
+        </a>
+        <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
+            <i class="fas fa-briefcase"></i>
+            <span>Workload</span>
+        </a>
+    `;
 }
 
 // ── View Management ──
@@ -283,7 +324,7 @@ function renderProjectsView(container) {
 
         <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
             ${filteredProjects.map(p => `
-                <div class="card">
+                <div class="card" style="cursor:pointer;" onclick="openProjectDetails('${p.id}')">
                     <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
                         <span class="badge" style="background:${p.status === 'On Track' ? '#dcfce7' : '#fee2e2'}; color:${p.status === 'On Track' ? '#166534' : '#991b1b'}; font-size:11px; padding:4px 10px; border-radius:20px;">${p.status}</span>
                     </div>
@@ -430,6 +471,74 @@ function showToast(message, type = 'success') {
 // ── Boilerplate for details & views (simplified) ──
 function renderOrgView(container) { container.innerHTML = '<h2>Org Settings</h2><p>Mock Code: FS-2026</p>'; }
 function openTaskDetails(name) { alert(`Thread for: ${name}\nSystem: No active messages.`); }
+// Temporary integration for Assign Task / Manage Team mock URLs.
+window.openTeamSetup = function(projectId) {
+    // We would pass the project id to the external page via localStorage or query param
+    localStorage.setItem('currentSetupProject', projectId);
+    window.location.href = 'team-setup.html';
+}
+window.openAssignTask = function(projectId) {
+    localStorage.setItem('currentAssignProject', projectId);
+    window.location.href = 'assign-task.html';
+}
+
+function openProjectDetails(projectId) {
+    const p = FlowSenseState.projects.find(proj => proj.id === projectId);
+    if(!p) return;
+    FlowSenseState.currentView = 'project_details';
+    const container = document.getElementById('view-container');
+    const role = localStorage.getItem('userRole'); 
+    const userName = localStorage.getItem('userName');
+    
+    // Check if the current user is the "Team Lead" for this project
+    // (mock check: if the project's lead name contains their user name)
+    const isLead = (role === 'employee' || role === 'company') && (p.lead === userName || p.lead.includes("Sharma")); // fallback to Anita for demo
+
+    let tabsContent = '';
+    
+    if (role === 'company') {
+        tabsContent = `
+            <div class="project-details-section">
+                <h3>High-Level Overview</h3>
+                <p>Status: ${p.status}</p>
+                <p>Progress: ${p.progress}%</p>
+                <button class="btn btn-secondary" onclick="loadView('projects')">Back to Projects</button>
+            </div>
+        `;
+    } else if (isLead) {
+        tabsContent = `
+            <div class="project-details-tabs" style="margin-top:20px; display:flex; gap:10px;">
+                <button class="btn btn-primary" onclick="alert('Overview view placeholder')">Overview</button>
+                <button class="btn btn-secondary" onclick="window.openTeamSetup('${p.id}')">Manage Team</button>
+                <button class="btn btn-secondary" onclick="window.openAssignTask('${p.id}')">Assign Tasks</button>
+            </div>
+            <div class="project-details-section" style="margin-top:20px;">
+                <button class="btn btn-secondary btn-sm" onclick="loadView('projects')">Back to Projects</button>
+            </div>
+        `;
+    } else {
+        // Standard Employee
+        tabsContent = `
+            <div class="project-details-tabs" style="margin-top:20px; display:flex; gap:10px;">
+                <button class="btn btn-primary">My Tasks</button>
+                <button class="btn btn-secondary" onclick="alert('Opening chat component...')">Chat / Requests</button>
+            </div>
+            <div class="project-details-section" style="margin-top:20px;">
+                <button class="btn btn-secondary btn-sm" onclick="loadView('projects')">Back to Projects</button>
+            </div>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="welcome-header">
+            <h2>${p.name}</h2>
+            <p>${p.description}</p>
+            <p style="font-size:12px; color:var(--primary-violet); margin-top:5px;"><i class="fas fa-crown"></i> Lead: ${p.lead}</p>
+        </div>
+        ${tabsContent}
+    `;
+}
+
 function renderPerformanceView(container) { container.innerHTML = '<h2>Performance</h2><p>Analytics loading...</p>'; }
 
 function logout() { localStorage.clear(); window.location.href = 'auth/login.html'; }
@@ -516,7 +625,7 @@ function renderEmployeeProjectsView(container) {
         </div>
         <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
             ${myProjects.map(p => `
-                <div class="card">
+                <div class="card" style="cursor:pointer;" onclick="openProjectDetails('${p.id}')">
                     <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
                         <span class="badge" style="background:#dcfce7; color:#166534; font-size:11px; padding:4px 10px; border-radius:20px;">Participating</span>
                     </div>

@@ -8,8 +8,16 @@ const companyId = localStorage.getItem('company_id') || '643e2f8e1234567890abcde
 
 document.addEventListener('DOMContentLoaded', () => {
     const tempProject = JSON.parse(localStorage.getItem('temp_project') || '{}');
-    if (!tempProject.name) {
-        window.location.href = 'create-project.html';
+    const role = localStorage.getItem('userRole');
+
+    if (role === 'company') {
+        alert("Access Denied: Team Leads manage team members.");
+        window.location.href = 'dashboard.html';
+        return;
+    }
+
+    if (!tempProject.name && !localStorage.getItem('currentSetupProject')) {
+        window.location.href = 'dashboard.html';
         return;
     }
 

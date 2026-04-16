@@ -21,10 +21,12 @@ app.use(express.static(__dirname));
 // Load routes
 const authRoutes    = require('./routes/auth');
 const projectRoutes = require('./routes/projectRoutes');
+const taskRoutes    = require('./routes/taskRoutes');
 
 // Mount routes
 app.use('/api/auth',     authRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/tasks',    taskRoutes);
 
 // Root route
 app.get('/', (req, res) => {

@@ -65,4 +65,17 @@ router.get('/employees/:company_id', async (req, res) => {
     }
 });
 
+// @route   GET /api/projects/company/:company_id
+// @desc    Get all projects for a company
+// @access  Private
+router.get('/company/:company_id', async (req, res) => {
+    try {
+        const projects = await Project.find({ company_id: req.params.company_id })
+            .select('name status');
+        res.json({ success: true, data: projects });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;
