@@ -24,7 +24,7 @@ const EmployeeSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['Developer', 'Tester', 'Production'],
+        enum: ['Developer', 'Tester', 'Production', 'Designer', 'Data Scientist', 'DevOps', 'Product Manager'],
         required: [true, 'Please select a role']
     },
     skills: {

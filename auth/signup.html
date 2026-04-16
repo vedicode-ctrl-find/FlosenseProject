@@ -142,13 +142,90 @@
             to { transform: translateY(-50%) rotate(360deg); }
         }
 
-        /* Smooth field transitions */
-        .field-animate {
-            animation: fieldSlide 0.35s ease-out;
+        /* Skills Tag System */
+        .skills-input-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--gray-100);
+            background: var(--gray-50);
+            border-radius: var(--radius-md);
+            min-height: 48px;
+            transition: all 0.3s ease;
+            cursor: text;
         }
-        @keyframes fieldSlide {
-            from { opacity: 0; transform: translateY(-8px); }
-            to { opacity: 1; transform: translateY(0); }
+        .skills-input-container:focus-within {
+            background: var(--white);
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+        .skill-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, var(--primary-violet) 0%, var(--primary-blue) 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            animation: tagPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            user-select: none;
+        }
+        .skill-tag span {
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .skill-tag span:hover {
+            opacity: 1;
+        }
+        .tag-input {
+            flex: 1;
+            border: none !important;
+            background: transparent !important;
+            padding: 4px 0 !important;
+            min-width: 120px;
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        /* Suggested Skills Badges */
+        .suggestions-group {
+            margin-top: 12px;
+        }
+        .suggestions-label {
+            font-size: 12px;
+            color: var(--gray-400);
+            margin-bottom: 8px;
+            display: block;
+        }
+        .suggestions-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .suggestion-badge {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            color: var(--gray-600);
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .suggestion-badge:hover {
+            border-color: var(--primary-violet);
+            color: var(--primary-violet);
+            background: var(--primary-light-purple);
+            transform: translateY(-2px);
+        }
+        @keyframes tagPop {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
         }
     </style>
 </head>
@@ -200,9 +277,9 @@
             <!-- Employee Specific Fields -->
             <div id="employee-fields" style="display: none;">
                 <div class="form-group field-animate">
-                    <label for="company-code">Company Code</label>
+                    <label for="employee-company-name">Company Name</label>
                     <div class="input-wrapper">
-                        <input type="text" id="company-code" placeholder="e.g., COMP2026" style="text-transform: uppercase; letter-spacing: 1px;">
+                        <input type="text" id="employee-company-name" placeholder="Enter your company name">
                     </div>
                 </div>
                 <div class="form-group field-animate">
@@ -211,14 +288,25 @@
                         <select id="role" class="styled-select">
                             <option value="Developer">Developer</option>
                             <option value="Tester">Tester</option>
-                            <option value="Production">Production</option>
+                            <option value="Designer">Designer</option>
+                            <option value="Data Scientist">Data Scientist</option>
+                            <option value="DevOps">DevOps</option>
+                            <option value="Product Manager">Product Manager</option>
+                            <option value="Production">Production Management</option>
                         </select>
                     </div>
                 </div>
                 <div class="form-group field-animate">
-                    <label for="skills">Skills <span style="font-weight: 400; color: var(--gray-300);">(comma separated)</span></label>
-                    <div class="input-wrapper">
-                        <input type="text" id="skills" placeholder="Frontend, Backend, UI/UX">
+                    <label>Skills <span style="font-weight: 400; color: var(--gray-400);">(Press Enter or Comma to add)</span></label>
+                    <div class="skills-input-container" id="skills-container">
+                        <!-- Tags will be injected here -->
+                        <input type="text" class="tag-input" id="skills-tag-input" placeholder="Type a skill and press Enter">
+                    </div>
+                    <div class="suggestions-group" id="suggestions-group" style="display: none;">
+                        <span class="suggestions-label">Suggested for your role:</span>
+                        <div class="suggestions-list" id="suggestions-list">
+                            <!-- Quick-add badges will appear here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -322,19 +410,111 @@
                 nameLabel.innerText = 'Full Name';
                 nameInput.placeholder = 'Enter your full name';
                 submitBtn.innerText = 'Join Organization';
-                document.getElementById('company-code').required = true;
+                updateSuggestions(document.getElementById('role').value);
             } else {
                 empFields.style.display = 'none';
                 industryGroup.style.display = 'block';
                 nameLabel.innerText = 'Company Name';
                 nameInput.placeholder = 'Enter company name';
                 submitBtn.innerText = 'Create Company Account';
-                document.getElementById('company-code').required = false;
             }
         }
 
         // Initialize state
         setRole('company');
+
+        // ── Skills Tag Logic ──
+        let employeeSkills = [];
+        const skillsContainer = document.getElementById('skills-container');
+        const skillsInput = document.getElementById('skills-tag-input');
+        const suggestionsGroup = document.getElementById('suggestions-group');
+        const suggestionsList = document.getElementById('suggestions-list');
+
+        const roleSuggestions = {
+            'Developer': ['React', 'Node.js', 'Python', 'JavaScript', 'MongoDB', 'Docker', 'Git', 'TypeScript', 'Tailwind CSS'],
+            'Tester': ['Selenium', 'Jest', 'Cypress', 'Manual Testing', 'API Testing', 'Performance Testing', 'Postman', 'JUnit'],
+            'Designer': ['UI Design', 'UX Research', 'Figma', 'Adobe XD', 'Prototyping', 'Design Systems', 'Typography', 'Illustrator'],
+            'Data Scientist': ['Machine Learning', 'Python', 'R', 'SQL', 'Data Visualization', 'Statistics', 'Pandas', 'TensorFlow'],
+            'DevOps': ['Terraform', 'Kubernetes', 'CI/CD', 'Azure', 'GCP', 'Monitoring', 'Bash Scripting', 'Security', 'Docker'],
+            'Product Manager': ['Roadmapping', 'User Stories', 'Market Research', 'Agile', 'Analytics', 'Stakeholder Mgmt', 'Jira'],
+            'Production': ['Agile', 'Kanban', 'Project Management', 'AWS', 'CI/CD', 'Documentation', 'Jira', 'Scrum']
+        };
+
+        function updateSuggestions(role) {
+            const suggestions = roleSuggestions[role] || [];
+            suggestionsList.innerHTML = '';
+            
+            if (suggestions.length > 0) {
+                suggestionsGroup.style.display = 'block';
+                suggestions.forEach(skill => {
+                    // Only show if not already added
+                    if (!employeeSkills.includes(skill)) {
+                        const badge = document.createElement('div');
+                        badge.className = 'suggestion-badge';
+                        badge.innerText = `+ ${skill}`;
+                        badge.onclick = () => addSkill(skill);
+                        suggestionsList.appendChild(badge);
+                    }
+                });
+            } else {
+                suggestionsGroup.style.display = 'none';
+            }
+        }
+
+        function addSkill(skill) {
+            if (skill && !employeeSkills.includes(skill)) {
+                employeeSkills.push(skill);
+                renderTags();
+                updateSuggestions(document.getElementById('role').value);
+            }
+        }
+
+        function renderTags() {
+            // Remove existing tags
+            const existingTags = skillsContainer.querySelectorAll('.skill-tag');
+            existingTags.forEach(tag => tag.remove());
+
+            // Add new tags before the input
+            employeeSkills.forEach((skill, index) => {
+                const tag = document.createElement('div');
+                tag.className = 'skill-tag';
+                tag.innerHTML = `
+                    ${skill}
+                    <span onclick="removeSkill(${index})">&times;</span>
+                `;
+                skillsContainer.insertBefore(tag, skillsInput);
+            });
+        }
+
+        function removeSkill(index) {
+            employeeSkills.splice(index, 1);
+            renderTags();
+            updateSuggestions(document.getElementById('role').value);
+        }
+
+        skillsInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                const val = this.value.trim().replace(',', '');
+                addSkill(val);
+                this.value = '';
+            } else if (e.key === 'Backspace' && !this.value && employeeSkills.length > 0) {
+                employeeSkills.pop();
+                renderTags();
+                updateSuggestions(document.getElementById('role').value);
+            }
+        });
+
+        // Update suggestions when role changes
+        document.getElementById('role').addEventListener('change', (e) => {
+            updateSuggestions(e.target.value);
+        });
+
+        // Initialize suggestions when switching to employee role in setRole
+        // We'll update setRole function next.
+
+        // Click on container focuses the input
+        skillsContainer.addEventListener('click', () => skillsInput.focus());
 
         // ── Form Submission ──
         document.getElementById('signup-form').addEventListener('submit', async (e) => {
@@ -349,10 +529,10 @@
             const confirmPassword = document.getElementById('confirmPassword').value;
 
             // Client-side validation
-            if (!name || !email || !password || !confirmPassword) {
-                showToast('Please fill in all required fields.', 'error');
-                return;
-            }
+            if (!name) { showToast('Please enter your ' + (currentRole === 'employee' ? 'Full Name' : 'Company Name') + '.', 'error'); return; }
+            if (!email) { showToast('Please enter your email address.', 'error'); return; }
+            if (!password) { showToast('Please enter a password.', 'error'); return; }
+            if (!confirmPassword) { showToast('Please confirm your password.', 'error'); return; }
 
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
                 showToast('Please enter a valid email address.', 'error');
@@ -379,19 +559,21 @@
             let endpoint = '/signup';
 
             if (currentRole === 'employee') {
-                const companyCode = document.getElementById('company-code').value.trim();
+                const companyName = document.getElementById('employee-company-name').value.trim();
                 const role = document.getElementById('role').value;
-                const skills = document.getElementById('skills').value.trim();
+                const skills = employeeSkills.join(', '); // Use the tag array
 
-                if (!companyCode || !role || !skills) {
-                    showToast('Please fill in all employee fields.', 'error');
+                const resetBtn = () => {
                     submitBtn.innerText = originalBtnText;
                     submitBtn.disabled = false;
                     submitBtn.classList.remove('btn-loading');
-                    return;
-                }
+                };
 
-                payload.company_code = companyCode;
+                if (!companyName) { showToast('Please enter the Company Name you wish to join.', 'error'); resetBtn(); return; }
+                if (!role) { showToast('Please select your role.', 'error'); resetBtn(); return; }
+                if (employeeSkills.length === 0) { showToast('Please add at least one skill.', 'error'); resetBtn(); return; }
+
+                payload.company_name = companyName;
                 payload.role = role;
                 payload.skills = skills;
                 endpoint = '/employee/signup';

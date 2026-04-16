@@ -59,23 +59,23 @@ exports.signup = async (req, res) => {
 // @access  Public
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, company_code } = req.body;
 
         // Validation
-        if (!email || !password) {
-            return res.status(400).json({ success: false, message: 'Please provide email and password.' });
+        if (!email || !password || !company_code) {
+            return res.status(400).json({ success: false, message: 'Please provide email, password, and company code.' });
         }
 
         // Check for company
-        const company = await Company.findOne({ email }).select('+password');
+        const company = await Company.findOne({ email, company_code }).select('+password');
         if (!company) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+            return res.status(401).json({ success: false, message: 'Invalid email, password, or company code.' });
         }
 
         // Check password
         const isMatch = await company.matchPassword(password);
         if (!isMatch) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+            return res.status(401).json({ success: false, message: 'Invalid email, password, or company code.' });
         }
 
         // Generate token
@@ -103,17 +103,20 @@ exports.login = async (req, res) => {
 // @access  Public
 exports.employeeSignup = async (req, res) => {
     try {
-        const { name, email, password, company_code, role, skills } = req.body;
+        const { name, email, password, company_name, role, skills } = req.body;
 
         // Validation
-        if (!name || !email || !password || !company_code || !role || !skills) {
-            return res.status(400).json({ success: false, message: 'Please fill in all required fields.' });
+        if (!name || !email || !password || !company_name || !role || !skills) {
+            return res.status(400).json({ success: false, message: 'Please fill in all required fields including company name.' });
         }
 
-        // Verify Company Code
-        const company = await Company.findOne({ company_code });
+        // Verify Company Name (Case-insensitive check)
+        const company = await Company.findOne({ 
+            company_name: { $regex: new RegExp("^" + company_name + "$", "i") } 
+        });
+        
         if (!company) {
-            return res.status(400).json({ success: false, message: 'Invalid Company Code. Please check with your organization admin.' });
+            return res.status(400).json({ success: false, message: 'Company not found. Please ensure the company name is correct.' });
         }
 
         // Check for existing employee
@@ -155,20 +158,26 @@ exports.employeeSignup = async (req, res) => {
 // @access  Public
 exports.employeeLogin = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, company_code } = req.body;
 
-        if (!email || !password) {
-            return res.status(400).json({ success: false, message: 'Please provide email and password.' });
+        if (!email || !password || !company_code) {
+            return res.status(400).json({ success: false, message: 'Please provide email, password, and company code.' });
         }
 
-        const employee = await Employee.findOne({ email }).select('+password').populate('company_id', 'company_name');
+        const employee = await Employee.findOne({ email }).select('+password').populate('company_id');
+        
         if (!employee) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+            return res.status(401).json({ success: false, message: 'Invalid email, password, or company code.' });
+        }
+
+        // Verify Company Code matches the employee's company
+        if (employee.company_id.company_code !== company_code) {
+            return res.status(401).json({ success: false, message: 'Invalid email, password, or company code.' });
         }
 
         const isMatch = await employee.matchPassword(password);
         if (!isMatch) {
-            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+            return res.status(401).json({ success: false, message: 'Invalid email, password, or company code.' });
         }
 
         const token = jwt.sign({ id: employee._id, role: 'employee' }, process.env.JWT_SECRET, {

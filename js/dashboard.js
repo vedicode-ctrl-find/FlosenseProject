@@ -90,6 +90,10 @@ function renderEmployeeSidebar() {
             <i class="fas fa-briefcase"></i>
             <span>Workload</span>
         </a>
+        <a href="#" class="nav-item" data-view="team" onclick="loadView('team')">
+            <i class="fas fa-users"></i>
+            <span>Team Hub</span>
+        </a>
     `;
 }
 
@@ -351,23 +355,11 @@ function renderTeamView(container) {
     container.innerHTML = `
         <div class="welcome-header">
             <h2>Team Hub</h2>
-            <p>Managing ${filteredTeam.length} active members.</p>
+            <p>Managing ${filteredTeam.length} active members across the organization.</p>
         </div>
 
-        <div class="card" style="padding:0; overflow:hidden;">
-            <table style="width:100%; border-collapse: collapse;">
-                <thead style="background:#f8fafc; border-bottom:1px solid #f1f5f9;">
-                    <tr style="text-align:left; font-size:12px; color:var(--gray-600); text-transform:uppercase; letter-spacing:0.5px;">
-                        <th style="padding:16px 24px;">Employee</th>
-                        <th style="padding:16px 24px;">Role</th>
-                        <th style="padding:16px 24px;">Skills</th>
-                        <th style="padding:16px 24px;">Workload</th>
-                    </tr>
-                </thead>
-                <tbody style="font-size:14px;">
-                    ${filteredTeam.map(e => renderTeamRow(e)).join('')}
-                </tbody>
-            </table>
+        <div class="team-grid">
+            ${filteredTeam.map(e => renderTeamCard(e)).join('')}
         </div>
     `;
 }
@@ -425,16 +417,57 @@ function renderTasksView(container) {
 
 // ── Shared UI Renderers ──
 
-function renderTeamRow(e) {
+function renderTeamCard(e) {
     const statusColor = e.workload > 120 ? '#ef4444' : (e.workload < 80 ? '#3b82f6' : '#10b981');
-    const skillBadges = e.skills.map(s => `<span style="background:#f1f5f9; color:#475569; padding:2px 8px; border-radius:4px; font-size:11px; margin-right:4px;">${s}</span>`).join('');
+    const skillTags = e.skills.map(s => `<span class="team-skill-tag">${s}</span>`).join('');
+    
+    // Find projects from tasks
+    const activeProjects = [...new Set(FlowSenseState.tasks.filter(t => t.assigneeId === e.id).map(t => t.projectName))];
+    const projectBadges = activeProjects.length > 0 
+        ? activeProjects.map(p => `<span class="team-project-badge">${p}</span>`).join('')
+        : '<span style="color:var(--gray-400); font-size:12px;">No active projects</span>';
+
+    const statusType = e.workload > 120 ? 'busy' : 'online';
+
     return `
-        <tr style="border-bottom:1px solid #f1f5f9;">
-            <td style="padding:16px 24px;"><div style="display:flex; align-items:center; gap:12px;"><img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=random" style="width:36px; height:36px; border-radius:50%;"><strong>${e.name}</strong></div></td>
-            <td style="padding:16px 24px;">${e.role}</td>
-            <td style="padding:16px 24px;">${skillBadges}</td>
-            <td style="padding:16px 24px;"><div style="display:flex; align-items:center; gap:10px;"><div style="flex:1; height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden;"><div style="width:${Math.min(e.workload, 100)}%; height:100%; background:${statusColor};"></div></div><span style="font-weight:700; font-size:12px; color:${statusColor};">${Math.round(e.workload)}%</span></div></td>
-        </tr>
+        <div class="team-card">
+            <div class="team-card-header">
+                <div class="team-card-avatar-wrapper">
+                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=random" class="team-card-avatar" alt="${e.name}">
+                    <div class="status-indicator ${statusType}"></div>
+                </div>
+                <div class="team-card-meta">
+                    <h3>${e.name}</h3>
+                    <span class="team-card-role">${e.role}</span>
+                </div>
+            </div>
+
+            <div class="team-card-section">
+                <span class="team-card-label">Core Skills</span>
+                <div class="team-skill-tags">
+                    ${skillTags}
+                </div>
+            </div>
+
+            <div class="team-card-section">
+                <span class="team-card-label">Active Projects</span>
+                <div class="team-project-badges">
+                    ${projectBadges}
+                </div>
+            </div>
+
+            <div class="team-card-footer">
+                <div class="workload-visual">
+                    <div class="workload-meta">
+                        <span>Workload</span>
+                        <span class="workload-status-text" style="color:${statusColor}">${Math.round(e.workload)}%</span>
+                    </div>
+                    <div class="workload-bar-bg">
+                        <div class="workload-bar-fill" style="width:${Math.min(e.workload, 100)}%; background:${statusColor}"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     `;
 }
 

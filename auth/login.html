@@ -118,6 +118,13 @@
             </div>
 
             <div class="form-group">
+                <label for="company-code">Company Code</label>
+                <div class="input-wrapper">
+                    <input type="text" id="company-code" placeholder="e.g., COMP2026" style="text-transform: uppercase;" required>
+                </div>
+            </div>
+
+            <div class="form-group">
                 <label for="password">Password</label>
                 <div class="input-wrapper">
                     <input type="password" id="password" placeholder="••••••••" required>
@@ -189,9 +196,10 @@
 
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
+            const company_code = document.getElementById('company-code').value.trim();
 
-            if (!email || !password) {
-                showToast('Please enter both email and password.', 'error');
+            if (!email || !password || !company_code) {
+                showToast('Please enter email, password, and company code.', 'error');
                 return;
             }
 
@@ -206,7 +214,7 @@
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
+                    body: JSON.stringify({ email, password, company_code })
                 });
 
                 const data = await response.json();
