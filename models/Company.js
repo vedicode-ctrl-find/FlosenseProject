@@ -31,6 +31,38 @@ const CompanySchema = new mongoose.Schema({
         type: String,
         unique: true
     },
+    profile_image: {
+        type: String,
+        default: ''
+    },
+    billing: {
+        plan: {
+            type: String,
+            enum: ['Free', 'Professional', 'Enterprise'],
+            default: 'Free'
+        },
+        status: {
+            type: String,
+            enum: ['Active', 'Canceled', 'Past Due'],
+            default: 'Active'
+        },
+        next_billing_date: {
+            type: Date,
+            default: () => new Date(+new Date() + 30*24*60*60*1000) // Default to 30 days from now
+        },
+        payment_methods: [{
+            card_type: String,
+            last4: String,
+            expiry: String,
+            is_primary: { type: Boolean, default: false }
+        }],
+        billing_history: [{
+            date: { type: Date, default: Date.now },
+            amount: Number,
+            invoice_id: String,
+            plan_name: String
+        }]
+    },
     created_at: {
         type: Date,
         default: Date.now

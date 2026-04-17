@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard | FlowSense</title>
+    <title>Employee Dashboard | FlowSense</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/dashboard.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -25,10 +25,6 @@
                 <i class="fas fa-project-diagram"></i>
                 <span>Projects</span>
             </a>
-            <a href="#" class="nav-item" id="nav-team" data-view="team" onclick="loadView('team')">
-                <i class="fas fa-users"></i>
-                <span>Team Hub</span>
-            </a>
             <a href="assign-task.html" class="nav-item" data-view="tasks">
                 <i class="fas fa-tasks"></i>
                 <span>Optimizer</span>
@@ -36,10 +32,6 @@
             <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
                 <i class="fas fa-chart-line"></i>
                 <span>Insights</span>
-            </a>
-            <a href="#" class="nav-item" id="nav-org" data-view="organization" onclick="loadView('organization')">
-                <i class="fas fa-building"></i>
-                <span>Organization</span>
             </a>
         </nav>
 
@@ -179,14 +171,6 @@
                         </div>
                         <i class="fas fa-chevron-right mi-arrow"></i>
                     </button>
-                    <button class="menu-item-btn" id="billing-menu-item" onclick="openBillingPanel()">
-                        <div class="mi-icon"><i class="fas fa-credit-card"></i></div>
-                        <div class="mi-text">
-                            <span>Billing & Subscription</span>
-                            <p>Manage your enterprise plan</p>
-                        </div>
-                        <i class="fas fa-chevron-right mi-arrow"></i>
-                    </button>
                     
                     <div class="menu-group-title">Session Management</div>
                     <button class="menu-item-btn logout" onclick="logout()">
@@ -256,58 +240,9 @@
                 </form>
             </div>
 
-            <!-- Billing & Subscription View -->
-            <div id="profile-view-billing" style="display:none;">
-                <button class="back-btn" onclick="closeBillingPanel()">
-                    <i class="fas fa-arrow-left"></i> Back to account
-                </button>
-
-                <!-- Current Plan -->
-                <div class="billing-card current">
-                    <div class="bc-header">
-                        <span class="bc-plan-badge" id="billing-plan-badge">Enterprise v2</span>
-                        <h3 class="bc-title" id="billing-current-plan">Current Stream: Enterprise</h3>
-                    </div>
-                    <div class="bc-stats">
-                        <div class="bc-stat">
-                            <span>Usage</span>
-                            <p id="billing-usage">85% Active</p>
-                        </div>
-                        <div class="bc-stat">
-                            <span>Next Bill</span>
-                            <p id="billing-next-date">Loading...</p>
-                        </div>
-                    </div>
-                    <button class="btn-plan-manage" onclick="manageSubscription()">Manage Renewal</button>
-                </div>
-
-                <!-- Payment Methods -->
-                <div class="billing-section">
-                    <h4 class="section-label">Payment Methods</h4>
-                    <div id="billing-payment-list">
-                        <!-- Dynamic items -->
-                        <p style="font-size:12px; color:var(--gray-400);">Synchronizing payment protocols...</p>
-                    </div>
-                    <button class="btn-link-action" onclick="addPaymentMethod()">+ Add Payment Method</button>
-                </div>
-
-                <!-- Billing History -->
-                <div class="billing-section">
-                    <h4 class="section-label">Billing History</h4>
-                    <div class="history-list" id="billing-history-list">
-                        <!-- Dynamic items -->
-                        <p style="font-size:12px; color:var(--gray-400);">Accessing transaction archives...</p>
-                    </div>
-                </div>
-
-                <!-- Danger Zone -->
-                <div class="billing-section danger">
-                    <button class="btn-sheet-danger" onclick="cancelSubscription()">Cancel Subscription Intelligence</button>
-                </div>
-            </div>
         </div>
     </aside>
 
-    <script src="js/dashboard.js"></script>
+    <script src="js/dashboard-employee.js"></script>
 </body>
 </html>

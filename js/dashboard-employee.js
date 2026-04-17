@@ -1608,31 +1608,24 @@ function renderNotificationsList() {
     let filtered = FlowSenseNotifications;
     if (notificationFilter === 'new') filtered = FlowSenseNotifications.filter(n => !n.read);
     if (notificationFilter === 'read') filtered = FlowSenseNotifications.filter(n => n.read);
+    let items = FlowSenseNotifications;
+    if (notificationFilter === 'new') items = FlowSenseNotifications.filter(n => !n.read);
+    if (notificationFilter === 'read') items = FlowSenseNotifications.filter(n => n.read);
 
-    if (filtered.length === 0) {
-        list.innerHTML = `<div style="padding:60px 40px; text-align:center;">
-            <i class="fas fa-bell-slash" style="font-size:32px; color:var(--gray-200); margin-bottom:16px; display:block;"></i>
-            <p style="color:var(--gray-400); font-size:14px; font-weight:600;">System is currently clear</p>
-            <p style="color:var(--gray-300); font-size:12px; margin-top:4px;">No active alerts or updates found in the current stream.</p>
-        </div>`;
-        return;
-    }
-
-    list.innerHTML = filtered.map(n => {
+    let listHtml = items.map(n => {
         const isExpanded = expandedNotifId === n.id;
         return `
-            <div class="notif-item ${n.read ? 'read' : ''} ${isExpanded ? 'expanded' : ''}" onclick="toggleNotifExpand(event, '${n.id}')">
-                <div class="notif-top-row">
-                    <div class="notif-icon-box ${n.type}">
-                        <i class="fas ${n.type === 'success' ? 'fa-check' : (n.type === 'danger' ? 'fa-exclamation' : 'fa-info')}"></i>
+            <div class="notif-item ${!n.read ? 'unread' : ''} ${isExpanded ? 'expanded' : ''}" onclick="toggleNotifExpand(event, '${n.id}')">
+                <div class="notif-item-main">
+                    <div class="notif-item-icon ${n.type}">
+                        <i class="fas ${n.type === 'danger' ? 'fa-exclamation-circle' : n.type === 'success' ? 'fa-check-circle' : 'fa-info-circle'}"></i>
                     </div>
-                    <div class="notif-body-content">
+                    <div class="notif-item-content">
                         <div class="notif-meta">
                             <span class="notif-item-title">${n.title}</span>
                             <span class="notif-item-time">${n.time}</span>
                         </div>
                         <div class="notif-item-desc">${n.desc}</div>
-                        
                         ${isExpanded ? `
                             <div class="notif-expanded-area">
                                 <p class="notif-long-text">${n.longDesc}</p>
@@ -1648,6 +1641,18 @@ function renderNotificationsList() {
             </div>
         `;
     }).join('');
+
+    if (items.length === 0) {
+        listHtml = `
+            <div style="padding:40px 20px; text-align:center; color:var(--gray-400);">
+                <i class="fas fa-bell-slash" style="font-size:32px; margin-bottom:15px; opacity:0.3;"></i>
+                <p style="font-size:13px;">No personal alerts found.</p>
+                <p style="font-size:11px;">Your professional feed is clear.</p>
+            </div>
+        `;
+    }
+
+    list.innerHTML = listHtml;
 
     const unread = FlowSenseNotifications.filter(n => !n.read).length;
     const badge = document.getElementById('suggestion-count');
