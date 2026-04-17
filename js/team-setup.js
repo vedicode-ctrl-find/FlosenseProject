@@ -4,17 +4,21 @@
  */
 
 const API_BASE = '/api';
-const companyId = localStorage.getItem('company_id') || '643e2f8e1234567890abcdef';
+// Company is derived server-side from the JWT — never exposed in URL
+const token     = localStorage.getItem('token');
+const companyId = localStorage.getItem('companyId'); // used only for project API calls
 
 document.addEventListener('DOMContentLoaded', () => {
     const tempProject = JSON.parse(localStorage.getItem('temp_project') || '{}');
-    const role = localStorage.getItem('userRole');
+    const role  = localStorage.getItem('userRole');
+    const token = localStorage.getItem('token');
 
-    if (role === 'company') {
-        alert("Access Denied: Team Leads manage team members.");
-        window.location.href = 'dashboard.html';
+    if (!token) {
+        window.location.href = 'auth/login.html';
         return;
     }
+    // Company admin can also set up teams (after project creation redirects here)
+    // if (role === 'company') { ... } — allow company admin here
 
     if (!tempProject.name && !localStorage.getItem('currentSetupProject')) {
         window.location.href = 'dashboard.html';
@@ -48,38 +52,39 @@ document.addEventListener('DOMContentLoaded', () => {
     tooltip.className = 'tooltip-custom';
     document.body.appendChild(tooltip);
 
-    // 1. Fetch Data
+    // 1. Fetch Data — Secure token-authenticated endpoint
+    // Server determines which company the user belongs to via JWT.
+    // Frontend cannot manipulate company ID to see other companies' employees.
     const init = async () => {
+        if (!token) {
+            window.location.href = 'auth/login.html';
+            return;
+        }
+
+        employeesList.innerHTML = `<p style="text-align:center;color:#94a3b8;padding:24px;"><i class="fas fa-spinner fa-spin"></i> Loading company employees...</p>`;
+
         try {
-            const res = await fetch(`${API_BASE}/projects/employees/${companyId}`);
+            const res  = await fetch('/api/team-members', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (data.success && data.data && data.data.length > 0) {
                 allEmployees = data.data;
             } else {
-                console.warn('No employees found, using mock data');
-                useMockData();
+                // No employees — show helpful empty state, do NOT load mock data
+                allEmployees = [];
+                showToast('No employees registered yet. Ask your team to sign up with your company code.', 'info');
             }
         } catch (err) {
-            console.warn('Backend unavailable, using mock data');
-            useMockData();
+            console.error('Failed to load employees:', err);
+            allEmployees = [];
+            showToast('Could not reach the server. Please try again.', 'danger');
         }
 
         populateSkillFilter();
         renderEmployees();
         updateGlobalSummary();
         updateSuggestions();
-    };
-
-    const useMockData = () => {
-        allEmployees = [
-            { _id: '1', name: 'Rahul Sharma', role: 'Developer', skills: ['Frontend', 'React'], workload_percentage: 60, efficiency: 95, active_projects: 2 },
-            { _id: '2', name: 'Priya Patel', role: 'Developer', skills: ['Backend', 'Node.js'], workload_percentage: 130, efficiency: 88, active_projects: 4 },
-            { _id: '3', name: 'Amit Kumar', role: 'Tester', skills: ['Automation', 'QA'], workload_percentage: 45, efficiency: 92, active_projects: 1 },
-            { _id: '4', name: 'Sneha Rao', role: 'Production', skills: ['DevOps', 'AWS'], workload_percentage: 80, efficiency: 90, active_projects: 2 },
-            { _id: '5', name: 'Arjun Singh', role: 'Developer', skills: ['Backend', 'Python'], workload_percentage: 50, efficiency: 98, active_projects: 1 },
-            { _id: '6', name: 'Deepa M', role: 'Tester', skills: ['Manual', 'QA'], workload_percentage: 140, efficiency: 75, active_projects: 5 },
-            { _id: '7', name: 'Karan J', role: 'Developer', skills: ['Frontend', 'Vue'], workload_percentage: 30, efficiency: 85, active_projects: 0 }
-        ];
     };
 
     const populateSkillFilter = () => {
@@ -273,7 +278,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.saveTeam = async () => {
         if (selectedTeam.length === 0) {
-            showToast('Team cannot be empty.', 'danger');
+            showToast('Please add at least one team member.', 'danger');
+            return;
+        }
+
+        const projectId = localStorage.getItem('currentSetupProject');
+        if (!projectId) {
+            showToast('Project ID missing. Please create the project first.', 'danger');
             return;
         }
 
@@ -282,15 +293,26 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true;
 
         try {
-            console.log('Saving team:', selectedTeam.map(e => e._id));
-            
-            showToast('Team optimization saved successfully!', 'success');
-            setTimeout(() => {
-                window.location.href = 'dashboard.html';
-            }, 1800);
+            const res  = await fetch(`${API_BASE}/projects/${projectId}/team`, {
+                method:  'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ team_members: selectedTeam.map(e => e._id) })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                showToast('Team saved successfully! Redirecting to dashboard...', 'success');
+                localStorage.removeItem('currentSetupProject');
+                setTimeout(() => { window.location.href = 'dashboard.html'; }, 1800);
+            } else {
+                showToast(data.error || 'Failed to save team. Please try again.', 'danger');
+                btn.disabled   = false;
+                btn.textContent = '💾 Save Team & Continue';
+            }
         } catch (err) {
-            showToast('Failed to save team setup.', 'danger');
-            btn.disabled = false;
+            console.error('Save team error:', err);
+            showToast('Could not reach the server. Please try again.', 'danger');
+            btn.disabled   = false;
             btn.textContent = '💾 Save Team & Continue';
         }
     };

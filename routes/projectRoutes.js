@@ -78,4 +78,34 @@ router.get('/company/:company_id', async (req, res) => {
     }
 });
 
+// @route   GET /api/projects/lead/:employee_id
+// @desc    Get all projects where the given employee is the team_lead
+// @access  Private (used by frontend to verify team lead access)
+router.get('/lead/:employee_id', async (req, res) => {
+    try {
+        const projects = await Project.find({ team_lead: req.params.employee_id })
+            .select('name status deadline team_members');
+        res.json({ success: true, data: projects });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+// @route   GET /api/projects/:id/members
+// @desc    Get team members of a specific project
+// @access  Private
+router.get('/:id/members', async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id)
+            .populate('team_members', 'name role workload_percentage skills efficiency employee_id')
+            .populate('team_lead', 'name role workload_percentage skills efficiency employee_id');
+        if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
+        // Include both team_lead and team_members in the response
+        const allMembers = [project.team_lead, ...project.team_members].filter(Boolean);
+        res.json({ success: true, data: allMembers });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;

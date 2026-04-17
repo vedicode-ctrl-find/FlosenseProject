@@ -1,74 +1,100 @@
 /**
  * create-project.js
- * FlowSense Project Creation logic
+ * FlowSense Project Creation — Company Admin only.
+ * Team Lead dropdown populated exclusively from real MongoDB employees of this company.
  */
 
-const API_BASE = '/api';
-const companyId = localStorage.getItem('company_id') || '643e2f8e1234567890abcdef'; // Mock or fallback
-
 document.addEventListener('DOMContentLoaded', () => {
-    const form = document.getElementById('project-form');
-    const leadSelect = document.getElementById('proj-lead');
-    const priorityBtns = document.querySelectorAll('.priority-btn');
-    const priorityInput = document.getElementById('proj-priority');
-    const leadWarning = document.getElementById('lead-warning');
-    const leadInfo = document.getElementById('lead-info');
-    const leadInfoText = document.getElementById('lead-info-text');
+    // Read token (company derived server-side from JWT — never from URL)
+    const token     = localStorage.getItem('token');
+    const companyId = localStorage.getItem('companyId'); // kept for project submission only
+
+    const form           = document.getElementById('project-form');
+    const leadSelect     = document.getElementById('proj-lead');
+    const priorityBtns   = document.querySelectorAll('.priority-btn');
+    const priorityInput  = document.getElementById('proj-priority');
+    const leadWarning    = document.getElementById('lead-warning');
+    const leadInfo       = document.getElementById('lead-info');
+    const leadInfoText   = document.getElementById('lead-info-text');
     const leadSuggestions = document.getElementById('lead-suggestions');
+    const submitBtn      = document.getElementById('submit-btn');
 
     let employees = [];
 
-    // Check Role
+    // ── Auth Guard: Company Admin Only ──
     const role = localStorage.getItem('userRole');
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+        window.location.href = 'auth/login.html';
+        return;
+    }
     if (role === 'employee') {
-        alert("Access Denied: Only Company Admins can create projects.");
-        window.location.href = 'dashboard.html';
+        showToast('Access Denied: Only Company Admins can create projects.', 'danger');
+        setTimeout(() => { window.location.href = 'dashboard.html'; }, 1500);
+        return;
+    }
+    if (!companyId) {
+        showToast('Session error: Company ID missing. Please log in again.', 'danger');
+        setTimeout(() => { window.location.href = 'auth/login.html'; }, 2000);
         return;
     }
 
-    // 1. Fetch Employees for Lead Dropdown
+    // ── Update nav avatar ──
+    const navAvatar = document.getElementById('nav-avatar');
+    const userName  = localStorage.getItem('userName') || 'A';
+    if (navAvatar) navAvatar.textContent = userName.charAt(0).toUpperCase();
+
+    // ── 1. Fetch Employees via secure token endpoint ──
+    // Server reads company from JWT — URL cannot be manipulated to see other companies
     const fetchEmployees = async () => {
+        leadSelect.innerHTML = '<option value="">Loading company members...</option>';
+        leadSelect.disabled = true;
+
         try {
-            const res = await fetch(`${API_BASE}/projects/employees/${companyId}`);
+            const res  = await fetch('/api/team-members', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
+
             if (data.success && data.data && data.data.length > 0) {
                 employees = data.data;
                 populateLeadSelect(employees);
             } else {
-                console.warn('No employees found in database, using mock data.');
-                useMockEmployees();
+                // No employees — do NOT fall back to mock data
+                leadSelect.innerHTML = '<option value="">— No employees registered yet —</option>';
+                leadSelect.disabled = true;
+                showToast('No employees found. Ask your team to sign up using your company code first.', 'info');
             }
         } catch (err) {
             console.error('Error fetching employees:', err);
-            useMockEmployees();
+            leadSelect.innerHTML = '<option value="">— Failed to load employees —</option>';
+            leadSelect.disabled = true;
+            showToast('Could not load employees. Please check your connection.', 'danger');
         }
-    };
-
-    const useMockEmployees = () => {
-        showToast('Using simulated data for demo purposes.', 'info');
-        employees = [
-            { _id: '1', name: 'Rahul Sharma', role: 'Developer', workload_percentage: 60, efficiency: 95 },
-            { _id: '2', name: 'Priya Patel', role: 'Developer', workload_percentage: 130, efficiency: 88 },
-            { _id: '3', name: 'Amit Kumar', role: 'Tester', workload_percentage: 45, efficiency: 92 },
-            { _id: '4', name: 'Sneha Rao', role: 'Production', workload_percentage: 80, efficiency: 90 },
-            { _id: '5', name: 'Arjun Singh', role: 'Developer', workload_percentage: 50, efficiency: 98 }
-        ];
-        populateLeadSelect(employees);
     };
 
     const populateLeadSelect = (list) => {
         leadSelect.innerHTML = '<option value="">— Choose a Team Lead —</option>';
-        list.forEach(emp => {
-            const option = document.createElement('option');
-            option.value = emp._id;
-            option.textContent = `${emp.name} — ${emp.role} (${emp.workload_percentage}% workload)`;
+        leadSelect.disabled = false;
+
+        // Sort: least workload first
+        const sorted = [...list].sort((a, b) => (a.workload_percentage || 0) - (b.workload_percentage || 0));
+
+        sorted.forEach(emp => {
+            const option        = document.createElement('option');
+            option.value        = emp._id;
+            const wl            = emp.workload_percentage || 0;
+            const statusIcon    = wl > 100 ? '🔴' : wl >= 70 ? '🟡' : '🟢';
+            option.textContent  = `${statusIcon} ${emp.name} — ${emp.role} (${wl}% workload)`;
             leadSelect.appendChild(option);
         });
     };
 
-    // 2. Lead Selection Analysis
+    // ── 2. Lead Selection Analysis ──
     leadSelect.addEventListener('change', () => {
         const selectedId = leadSelect.value;
+
         if (!selectedId) {
             leadWarning.classList.remove('show');
             leadInfo.classList.remove('show');
@@ -76,38 +102,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const emp = employees.find(e => e._id === selectedId);
-        if (emp) {
-            if (emp.workload_percentage > 120) {
-                leadWarning.classList.add('show');
-                leadInfo.classList.remove('show');
-                suggestAlternativeLeads(emp.role);
-            } else {
-                leadWarning.classList.remove('show');
-                leadInfo.classList.add('show');
-                leadInfoText.innerHTML = `<strong>Balanced Workload:</strong> ${emp.name} has a current workload of ${emp.workload_percentage}%. This is a safe assignment.`;
-            }
+        if (!emp) return;
+
+        const wl = emp.workload_percentage || 0;
+
+        if (wl > 100) {
+            leadWarning.classList.add('show');
+            leadInfo.classList.remove('show');
+            suggestAlternativeLeads(emp.role, selectedId);
+        } else {
+            leadWarning.classList.remove('show');
+            leadInfo.classList.add('show');
+            const statusTxt = wl >= 70 ? 'Moderately loaded — manageable' : 'Low workload — great choice!';
+            leadInfoText.innerHTML = `<strong>${emp.name}</strong> has a current workload of <strong>${wl}%</strong>. ${statusTxt}`;
+            leadSuggestions.innerHTML = '';
         }
     });
 
-    const suggestAlternativeLeads = (role) => {
+    const suggestAlternativeLeads = (role, excludeId) => {
         leadSuggestions.innerHTML = '';
         const alternatives = employees
-            .filter(e => e.role === role && e.workload_percentage <= 100)
-            .sort((a, b) => a.workload_percentage - b.workload_percentage)
-            .slice(0, 2);
+            .filter(e => e._id !== excludeId && (e.workload_percentage || 0) <= 100)
+            .sort((a, b) => (a.workload_percentage || 0) - (b.workload_percentage || 0))
+            .slice(0, 3);
 
         if (alternatives.length > 0) {
-            const p = document.createElement('p');
-            p.style.fontSize = '12px';
-            p.style.marginTop = '10px';
-            p.textContent = 'Suggested alternatives:';
-            leadSuggestions.appendChild(p);
+            const label       = document.createElement('p');
+            label.style.cssText = 'font-size:12px;margin-top:10px;font-weight:600;';
+            label.textContent = 'Suggested alternatives:';
+            leadSuggestions.appendChild(label);
 
             alternatives.forEach(alt => {
-                const chip = document.createElement('span');
-                chip.className = 'suggestion-chip';
-                chip.textContent = `${alt.name} (${alt.workload_percentage}%)`;
-                chip.onclick = () => {
+                const chip      = document.createElement('span');
+                chip.className  = 'suggestion-chip';
+                chip.textContent = `${alt.name} (${alt.workload_percentage || 0}%)`;
+                chip.onclick    = () => {
                     leadSelect.value = alt._id;
                     leadSelect.dispatchEvent(new Event('change'));
                 };
@@ -116,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // 3. Priority Selection
+    // ── 3. Priority Selection ──
     priorityBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             priorityBtns.forEach(b => b.classList.remove('active'));
@@ -125,43 +154,66 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 4. Form Submission
+    // ── 4. Form Submission → POST to real API ──
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const projData = {
-            name: document.getElementById('proj-name').value,
-            deadline: document.getElementById('proj-deadline').value,
-            description: document.getElementById('proj-desc').value,
-            team_lead: leadSelect.value,
-            priority: priorityInput.value,
+            name:       document.getElementById('proj-name').value.trim(),
+            deadline:   document.getElementById('proj-deadline').value,
+            description: document.getElementById('proj-desc').value.trim(),
+            team_lead:  leadSelect.value,
+            priority:   priorityInput.value || 'Medium',
             company_id: companyId
         };
 
         if (!projData.name || !projData.deadline || !projData.team_lead) {
-            showToast('Please fill in all required fields.', 'danger');
+            showToast('Please fill in all required fields including the Team Lead.', 'danger');
             return;
         }
 
-        // Store in localStorage for the next page to use (Team Setup)
-        localStorage.setItem('temp_project', JSON.stringify(projData));
+        // Loading state
+        submitBtn.disabled   = true;
+        submitBtn.textContent = 'Creating Project...';
 
-        showToast('Saving project details...', 'success');
+        try {
+            const res  = await fetch('/api/projects', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(projData)
+            });
+            const data = await res.json();
 
-        // Simulate backend delay then redirect
-        setTimeout(() => {
-            window.location.href = 'dashboard.html';
-        }, 1200);
+            if (data.success) {
+                // Store new project id for optional team-setup redirect
+                localStorage.setItem('currentSetupProject', data.data._id);
+                showToast(`Project "${projData.name}" created successfully! Redirecting...`, 'success');
+                setTimeout(() => {
+                    window.location.href = 'team-setup.html';
+                }, 1500);
+            } else {
+                showToast(data.error || 'Failed to create project. Please try again.', 'danger');
+                submitBtn.disabled   = false;
+                submitBtn.textContent = '✦ Create Project';
+            }
+        } catch (err) {
+            console.error('Project creation error:', err);
+            showToast('Could not reach the server. Please try again.', 'danger');
+            submitBtn.disabled   = false;
+            submitBtn.textContent = '✦ Create Project';
+        }
     });
 
+    // Kick off employee fetch
     fetchEmployees();
 });
 
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
+    if (!container) return;
+    const toast        = document.createElement('div');
+    toast.className    = `toast ${type}`;
+    toast.textContent  = message;
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
 }

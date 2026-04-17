@@ -192,6 +192,7 @@ exports.employeeLogin = async (req, res) => {
                 name: employee.name,
                 employee_id: employee.employee_id,
                 company_name: employee.company_id.company_name,
+                company_id: employee.company_id._id,   // ← Added so frontend can store companyId
                 role: 'employee'
             }
         });

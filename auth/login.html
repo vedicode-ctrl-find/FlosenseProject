@@ -224,7 +224,9 @@
                     localStorage.setItem('token', data.token);
                     localStorage.setItem('userRole', data.data.role);
                     localStorage.setItem('userName', currentRole === 'employee' ? data.data.name : data.data.company_name);
-                    
+                    // Store userId and companyId for role-based access checks
+                    localStorage.setItem('userId',    data.data.id || '');
+                    localStorage.setItem('companyId', data.data.company_id || data.data.id || '');
                     const displayName = currentRole === 'employee' ? data.data.name : data.data.company_name;
                     showToast(`Welcome back, ${displayName}! Redirecting...`, 'success', 2000);
                     

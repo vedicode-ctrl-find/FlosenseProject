@@ -1,24 +1,63 @@
-// ── Initialization & State ──
+// ── Application State ──
+// NOTE: employees/projects are intentionally empty — all data comes from the real API.
+// DO NOT add mock data here; it causes cross-company data leakage.
 let FlowSenseState = {
-    employees: [
-        { id: 'emp1', name: 'Rahul Gupta', role: 'Developer', skills: ['Node.js', 'React', 'MongoDB'], workload: 135, status: 'Overloaded' },
-        { id: 'emp2', name: 'Arjun Singh', role: 'Developer', skills: ['Python', 'Django', 'AWS'], workload: 60, status: 'Underutilized' },
-        { id: 'emp3', name: 'Anita Sharma', role: 'Team Lead', skills: ['Strategy', 'Fullstack', 'UI'], workload: 95, status: 'Balanced' },
-        { id: 'emp4', name: 'Priya Verma', role: 'Tester', skills: ['Selenium', 'QA', 'Python'], workload: 110, status: 'Balanced' },
-        { id: 'emp5', name: 'Vikram Rao', role: 'Developer', skills: ['Java', 'Spring', 'Docker'], workload: 45, status: 'Underutilized' }
-    ],
-    projects: [
-        { id: 'prj1', name: 'SupplyChain X', description: 'Blockchain-based logistics tracking system.', lead: 'Anita Sharma', progress: 85, status: 'On Track' },
-        { id: 'prj2', name: 'Core Portal 2.0', description: 'Internal employee hub and resource manager.', lead: 'Vikram Rao', progress: 32, status: 'At Risk' }
-    ],
-    tasks: [
-        { id: 'tsk1', title: 'Auth Microservice', projectName: 'SupplyChain X', assigneeId: 'emp1', deadline: '2 Days Left', status: 'High-Risk', hours: 40 },
-        { id: 'tsk2', title: 'UI Polishing', projectName: 'Core Portal 2.0', assigneeId: 'emp2', deadline: '6 Days Left', status: 'On-Track', hours: 12 },
-        { id: 'tsk3', title: 'Database Migration', projectName: 'SupplyChain X', assigneeId: 'emp5', deadline: '1 Day Left', status: 'High-Risk', hours: 25 }
-    ],
-    currentView: 'overview',
-    searchQuery: ''
+    employees: [],   // DEPRECATED — use liveData.employees
+    projects:  [],   // DEPRECATED — use liveData.projects
+    tasks:     [],   // Live tasks (fetched per view)
+    currentView:  'overview',
+    searchQuery:  ''
 };
+
+// ── Live DB Data Store (populated from API) ──
+let liveData = {
+    employees: [],   // Real employees from MongoDB
+    projects:  [],   // Real projects from MongoDB
+    loaded:    false // Whether API data has been fetched
+};
+
+// Helper: get companyId from localStorage (set on login)
+function getCompanyId() {
+    return localStorage.getItem('companyId') || '';
+}
+
+// ── Fetch real employees — secure token-authenticated endpoint ──
+// Server derives the company from the JWT; frontend cannot manipulate it.
+async function fetchLiveEmployees() {
+    const token = localStorage.getItem('token');
+    if (!token) return [];
+    try {
+        const res  = await fetch('/api/team-members', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+            liveData.employees = data.data;
+            return data.data;
+        }
+        console.error('Team members fetch failed:', data.error);
+    } catch (err) {
+        console.error('Failed to fetch team members:', err);
+    }
+    return [];
+}
+
+// ── Fetch all real projects for this company ──
+async function fetchLiveProjects() {
+    const companyId = getCompanyId();
+    if (!companyId) return [];
+    try {
+        const res  = await fetch(`/api/projects/company/${companyId}`);
+        const data = await res.json();
+        if (data.success) {
+            liveData.projects = data.data;
+            return data.data;
+        }
+    } catch (err) {
+        console.error('Failed to fetch live projects:', err);
+    }
+    return [];
+}
 
 // ── Authentication Check ──
 function checkAuth() {
@@ -206,27 +245,80 @@ function handleTaskAssignment(e) {
     recalculateState();
 }
 
-// 3. Search Implementation
+// 3. Search / Filter Implementation
+// ONLY uses real DB data. Never falls back to mock.
 function getFilteredData(type) {
     const q = FlowSenseState.searchQuery;
-    if (!q) return FlowSenseState[type];
-    
+
     if (type === 'employees') {
-        return FlowSenseState.employees.filter(e => 
-            e.name.toLowerCase().includes(q) || e.role.toLowerCase().includes(q) || e.skills.some(s => s.toLowerCase().includes(q))
-        );
+        // Always use live DB data — if empty, return empty (no mock fallback)
+        const source = liveData.employees;
+        if (!q) return source;
+        return source.filter(e => {
+            const name   = (e.name   || '').toLowerCase();
+            const role   = (e.role   || '').toLowerCase();
+            const skills = (e.skills || []).map(s => s.toLowerCase());
+            return name.includes(q) || role.includes(q) || skills.some(s => s.includes(q));
+        });
     }
+
     if (type === 'projects') {
-        return FlowSenseState.projects.filter(p => 
-            p.name.toLowerCase().includes(q) || p.lead.toLowerCase().includes(q)
+        // Always use live DB data
+        const source = liveData.projects;
+        if (!q) return source;
+        return source.filter(p =>
+            (p.name || '').toLowerCase().includes(q)
         );
     }
-    return FlowSenseState[type];
+
+    return [];
 }
 
 // ── Renderers ──
 
-function renderLeadOverview(container) {
+async function renderLeadOverview(container) {
+    // Show skeleton while loading
+    container.innerHTML = `
+        <div class="welcome-header">
+            <h2>Organization Health</h2>
+            <p>Intelligence platform analyzing team capacity and delivery risk.</p>
+        </div>
+        <div class="stats-grid">
+            ${[1,2,3,4].map(() => `
+                <div class="stat-card" style="opacity:0.5;">
+                    <div class="stat-icon violet"><i class="fas fa-spinner fa-spin"></i></div>
+                    <div><div class="stat-value">—</div><div class="stat-label">Loading...</div></div>
+                </div>
+            `).join('')}
+        </div>`;
+
+    // Fetch real data in parallel
+    const [employees, projects] = await Promise.all([fetchLiveEmployees(), fetchLiveProjects()]);
+
+    const overloaded     = employees.filter(e => (e.workload_percentage || 0) > 100);
+    const empCount       = employees.length;
+    const projCount      = projects.length;
+
+    // Build workload distribution from live employees
+    const workloadItems = employees.length > 0
+        ? employees.map(e => {
+            const wl     = e.workload_percentage || 0;
+            const status = wl > 100 ? 'overloaded' : wl >= 80 ? 'balanced' : 'underutilized';
+            return renderWorkloadItem(e.name, wl, status);
+          }).join('')
+        : '<p style="font-size:13px;color:var(--gray-600);text-align:center;padding:20px 0;">No employees registered yet.</p>';
+
+    // Smart suggestions from live data
+    const overloadedEmp    = employees.find(e => (e.workload_percentage || 0) > 100);
+    const underutilizedEmp = employees.find(e => (e.workload_percentage || 0) < 60);
+    const suggestionHTML = (overloadedEmp && underutilizedEmp)
+        ? `<div class="suggestion-card">
+                <h4><i class="fas fa-bolt"></i> Rebalance Alert</h4>
+                <p><strong>${overloadedEmp.name}</strong> is at <strong>${Math.round(overloadedEmp.workload_percentage)}%</strong> capacity.
+                   Suggested: Move a task to <strong>${underutilizedEmp.name}</strong> (${Math.round(underutilizedEmp.workload_percentage || 0)}% workload).</p>
+           </div>`
+        : `<p style="font-size:13px; color:var(--gray-600); text-align:center; margin-top:20px;">Team is balanced. No optimization needed.</p>`;
+
     container.innerHTML = `
         <div class="welcome-header">
             <h2>Organization Health</h2>
@@ -237,14 +329,14 @@ function renderLeadOverview(container) {
             <div class="stat-card">
                 <div class="stat-icon violet"><i class="fas fa-project-diagram"></i></div>
                 <div>
-                    <div class="stat-value">${FlowSenseState.projects.length}</div>
+                    <div class="stat-value">${projCount}</div>
                     <div class="stat-label">Active Projects</div>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                 <div>
-                    <div class="stat-value">${FlowSenseState.employees.length}</div>
+                    <div class="stat-value">${empCount}</div>
                     <div class="stat-label">Team Members</div>
                 </div>
             </div>
@@ -258,7 +350,7 @@ function renderLeadOverview(container) {
             <div class="stat-card">
                 <div class="stat-icon amber"><i class="fas fa-exclamation-triangle"></i></div>
                 <div>
-                    <div class="stat-value">${FlowSenseState.employees.filter(e => e.workload > 120).length}</div>
+                    <div class="stat-value">${overloaded.length}</div>
                     <div class="stat-label">Overload Alerts</div>
                 </div>
             </div>
@@ -269,18 +361,14 @@ function renderLeadOverview(container) {
                 <div class="card-header">
                     <h3>Workload Distribution</h3>
                 </div>
-                <div class="workload-list">
-                    ${FlowSenseState.employees.map(e => renderWorkloadItem(e.name, e.workload, e.status.toLowerCase())).join('')}
-                </div>
+                <div class="workload-list">${workloadItems}</div>
             </div>
 
             <div class="card">
                 <div class="card-header">
                     <h3>Optimizer Engine</h3>
                 </div>
-                <div id="simple-suggestion-list">
-                    ${renderRealSuggestions()}
-                </div>
+                <div id="simple-suggestion-list">${suggestionHTML}</div>
             </div>
         </div>
     `;
@@ -350,16 +438,67 @@ function renderProjectsView(container) {
     `;
 }
 
-function renderTeamView(container) {
-    const filteredTeam = getFilteredData('employees');
-    container.innerHTML = `
-        <div class="welcome-header">
-            <h2>Team Hub</h2>
-            <p>Managing ${filteredTeam.length} active members across the organization.</p>
-        </div>
+async function renderTeamView(container) {
+    const role = localStorage.getItem('userRole');
 
+    // Show loading skeleton
+    container.innerHTML = `
+        <div class="welcome-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h2>Team Hub</h2>
+                <p>Loading members...</p>
+            </div>
+        </div>
         <div class="team-grid">
-            ${filteredTeam.map(e => renderTeamCard(e)).join('')}
+            ${[1,2,3].map(() => `
+                <div class="team-card" style="opacity:0.4; pointer-events:none;">
+                    <div class="team-card-header">
+                        <div class="team-card-avatar-wrapper">
+                            <div style="width:48px;height:48px;border-radius:50%;background:#e9d5ff;"></div>
+                        </div>
+                        <div class="team-card-meta">
+                            <div style="height:14px;width:120px;background:#e9d5ff;border-radius:4px;margin-bottom:8px;"></div>
+                            <div style="height:11px;width:80px;background:#f3e8ff;border-radius:4px;"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>`;
+
+    // Fetch real employees
+    const employees = await fetchLiveEmployees();
+    liveData.employees = employees;
+    const filtered = getFilteredData('employees');
+
+    const companyName = localStorage.getItem('userName') || 'Your Company';
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="welcome-header">
+                <h2>Team Hub</h2>
+                <p>${FlowSenseState.searchQuery ? 'No members match your search.' : 'No employees have joined yet. Share your company code to get started.'}</p>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;gap:16px;">
+                <div style="width:72px;height:72px;background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                    <i class="fas fa-user-plus" style="font-size:28px;color:#8b5cf6;"></i>
+                </div>
+                <p style="font-size:14px;color:var(--gray-600);text-align:center;max-width:320px;">Employees can join by signing up with your company code. Once they register, they'll appear here automatically.</p>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="welcome-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <h2>Team Hub</h2>
+                <p>Managing <strong>${filtered.length}</strong> registered member${filtered.length !== 1 ? 's' : ''} in <strong>${companyName}</strong>.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;background:#f5f3ff;border:1px solid #ddd6fe;padding:6px 14px;border-radius:20px;font-size:13px;color:#7c3aed;font-weight:600;">
+                <i class="fas fa-users"></i> ${filtered.length} Total Members
+            </div>
+        </div>
+        <div class="team-grid">
+            ${filtered.map(e => renderTeamCard(e)).join('')}
         </div>
     `;
 }
@@ -418,22 +557,35 @@ function renderTasksView(container) {
 // ── Shared UI Renderers ──
 
 function renderTeamCard(e) {
-    const statusColor = e.workload > 120 ? '#ef4444' : (e.workload < 80 ? '#3b82f6' : '#10b981');
-    const skillTags = e.skills.map(s => `<span class="team-skill-tag">${s}</span>`).join('');
-    
-    // Find projects from tasks
-    const activeProjects = [...new Set(FlowSenseState.tasks.filter(t => t.assigneeId === e.id).map(t => t.projectName))];
-    const projectBadges = activeProjects.length > 0 
-        ? activeProjects.map(p => `<span class="team-project-badge">${p}</span>`).join('')
-        : '<span style="color:var(--gray-400); font-size:12px;">No active projects</span>';
+    // Support both DB shape (_id, workload_percentage) and mock shape (id, workload)
+    const workload    = e.workload_percentage !== undefined ? e.workload_percentage : (e.workload || 0);
+    const empId       = e._id || e.id || '';
+    const empIdLabel  = e.employee_id || '';
 
-    const statusType = e.workload > 120 ? 'busy' : 'online';
+    const statusColor = workload > 100 ? '#ef4444' : (workload < 70 ? '#3b82f6' : '#10b981');
+    const statusLabel = workload > 100 ? 'Overloaded' : (workload < 70 ? 'Available' : 'Balanced');
+    const statusType  = workload > 100 ? 'busy' : 'online';
+
+    const skills      = e.skills || [];
+    const skillTags   = skills.length > 0
+        ? skills.map(s => `<span class="team-skill-tag">${s}</span>`).join('')
+        : '<span style="color:var(--gray-400);font-size:12px;">No skills listed</span>';
+
+    // For DB employees we don\'t have project-task mapping live yet — show employee_id badge instead
+    const metaBadge   = empIdLabel
+        ? `<span class="team-project-badge" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;">${empIdLabel}</span>`
+        : '<span style="color:var(--gray-400);font-size:12px;">ID not assigned</span>';
+
+    const efficiency  = e.efficiency !== undefined ? e.efficiency : 100;
+
+    // Avatar color based on role
+    const avatarBg    = workload > 100 ? 'ef4444' : workload < 70 ? '3b82f6' : '8b5cf6';
 
     return `
         <div class="team-card">
             <div class="team-card-header">
                 <div class="team-card-avatar-wrapper">
-                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=random" class="team-card-avatar" alt="${e.name}">
+                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=${avatarBg}&color=fff" class="team-card-avatar" alt="${e.name}">
                     <div class="status-indicator ${statusType}"></div>
                 </div>
                 <div class="team-card-meta">
@@ -444,27 +596,27 @@ function renderTeamCard(e) {
 
             <div class="team-card-section">
                 <span class="team-card-label">Core Skills</span>
-                <div class="team-skill-tags">
-                    ${skillTags}
-                </div>
+                <div class="team-skill-tags">${skillTags}</div>
             </div>
 
             <div class="team-card-section">
-                <span class="team-card-label">Active Projects</span>
-                <div class="team-project-badges">
-                    ${projectBadges}
-                </div>
+                <span class="team-card-label">Employee ID</span>
+                <div class="team-project-badges">${metaBadge}</div>
             </div>
 
             <div class="team-card-footer">
                 <div class="workload-visual">
                     <div class="workload-meta">
                         <span>Workload</span>
-                        <span class="workload-status-text" style="color:${statusColor}">${Math.round(e.workload)}%</span>
+                        <span class="workload-status-text" style="color:${statusColor}">${Math.round(workload)}% — ${statusLabel}</span>
                     </div>
                     <div class="workload-bar-bg">
-                        <div class="workload-bar-fill" style="width:${Math.min(e.workload, 100)}%; background:${statusColor}"></div>
+                        <div class="workload-bar-fill" style="width:${Math.min(workload, 100)}%; background:${statusColor}"></div>
                     </div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9;">
+                    <span style="font-size:11px;color:var(--gray-600);">Efficiency</span>
+                    <span style="font-size:12px;font-weight:700;color:#8b5cf6;">${efficiency}%</span>
                 </div>
             </div>
         </div>
