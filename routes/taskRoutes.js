@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Task = require('../models/Task');
 const Employee = require('../models/Employee');
 const Project = require('../models/Project');
@@ -89,6 +90,44 @@ router.get('/employee/:emp_id', async (req, res) => {
     try {
         const tasks = await Task.find({ assigned_to: req.params.emp_id }).populate('project_id', 'name status');
         res.json({ success: true, data: tasks });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+// @route   PUT /api/tasks/:id/status
+// @desc    Update task status (and workload if completed)
+// @access  Private
+router.put('/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const task = await Task.findById(req.params.id);
+        if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+
+        const oldStatus = task.status;
+        task.status = status;
+        await task.save();
+
+        // If newly completed, reduce workload
+        if (status === 'Completed' && oldStatus !== 'Completed') {
+            const emp = await Employee.findById(task.assigned_to);
+            if (emp) {
+                const reduction = Math.round(task.hours * 2.5);
+                emp.workload_percentage = Math.max(0, (emp.workload_percentage || 0) - reduction);
+                await emp.save();
+            }
+        } 
+        // If moved back FROM completed, re-add workload
+        else if (oldStatus === 'Completed' && status !== 'Completed') {
+            const emp = await Employee.findById(task.assigned_to);
+            if (emp) {
+                const addition = Math.round(task.hours * 2.5);
+                emp.workload_percentage = (emp.workload_percentage || 0) + addition;
+                await emp.save();
+            }
+        }
+
+        res.json({ success: true, data: task });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }

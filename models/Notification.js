@@ -10,6 +10,11 @@ const NotificationSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         default: null // Null = Company-wide, Not Null = Targeted to specific userId
     },
+    targetRole: {
+        type: String,
+        enum: ['company', 'lead', 'employee', 'all'],
+        default: 'all'
+    },
     type: {
         type: String,
         enum: ['info', 'success', 'danger', 'warning'],

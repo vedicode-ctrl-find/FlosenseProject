@@ -6,6 +6,7 @@ let FlowSenseState = {
     projects:  [],   // DEPRECATED — use liveData.projects
     tasks:     [],   // Live tasks (fetched per view)
     currentView:  'overview',
+    currentSelectedProjectForTasks: 'all', // For Kanban filtering
     searchQuery:  '',
     userProfile: {}  // Cached for settings population
 };
@@ -28,7 +29,7 @@ async function fetchLiveEmployees() {
     const token = localStorage.getItem('token');
     if (!token) return [];
     try {
-        const res  = await fetch('/api/team-members', {
+        const res  = await fetch('http://localhost:5000/api/team-members', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -49,16 +50,24 @@ async function fetchLiveProjects() {
     const companyId = getCompanyId();
     if (!companyId) return [];
     try {
-        const res  = await fetch(`/api/projects/company/${companyId}`);
-        const data = await res.json();
-        if (data.success) {
-            liveData.projects = data.data;
-            FlowSenseState.projects = data.data; // Sync
-            liveData.loaded = true;
-            return data.data;
+        const res  = await fetch(`http://localhost:5000/api/projects/company/${companyId}`);
+        const text = await res.text();
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                liveData.projects = data.data;
+                FlowSenseState.projects = data.data; // Sync
+                liveData.loaded = true;
+                return data.data;
+            } else {
+                window.DiagnosticFetchDetails = "Success was false: " + text;
+            }
+        } catch (parseFail) {
+            window.DiagnosticFetchDetails = "JSON Parse Failed. Status: " + res.status + " | Response: " + text;
         }
     } catch (err) {
         console.error('Failed to fetch live projects:', err);
+        window.DiagnosticFetchDetails = "Network Fetch Exception: " + err.message;
     }
     return [];
 }
@@ -70,7 +79,7 @@ async function fetchLiveNotifications() {
     const role      = localStorage.getItem('userRole');
     if (!companyId) return;
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
+        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
         const data = await res.json();
         if (data.success) {
             // Map DB fields to UI fields if they differ
@@ -90,6 +99,20 @@ async function fetchLiveNotifications() {
         }
     } catch (err) {
         console.error('Notification synchronization failed:', err);
+    }
+}
+
+async function fetchLiveTasks() {
+    const companyId = getCompanyId();
+    if (!companyId) return;
+    try {
+        const res = await fetch(`http://localhost:5000/api/tasks/company/${companyId}`);
+        const data = await res.json();
+        if (data.success) {
+            FlowSenseState.tasks = data.data;
+        }
+    } catch (err) {
+        console.error('Task synchronization failed:', err);
     }
 }
 
@@ -138,9 +161,17 @@ function checkAuth() {
         });
     }
 
-    renderCurrentView();
     fetchLiveNotifications();
     fetchLiveProfile();
+    // Synchronize all data streams before initial render
+    // Use .catch() on each to ensure the dashboard still renders if one stream is offline
+    Promise.all([
+        fetchLiveProjects().catch(e => console.warn('Project stream offline')), 
+        fetchLiveEmployees().catch(e => console.warn('Employee stream offline')),
+        fetchLiveTasks().catch(e => console.warn('Task stream offline'))
+    ]).then(() => {
+        renderCurrentView();
+    });
 }
 
 function renderCompanySidebar() {
@@ -148,15 +179,19 @@ function renderCompanySidebar() {
     nav.innerHTML = `
         <a href="#" class="nav-item active" data-view="overview" onclick="loadView('overview')">
             <i class="fas fa-th-large"></i>
-            <span>Dashboard</span>
+            <span>Executive Board</span>
         </a>
         <a href="#" class="nav-item" data-view="projects" onclick="loadView('projects')">
             <i class="fas fa-project-diagram"></i>
-            <span>Projects</span>
+            <span>Project Index</span>
+        </a>
+        <a href="#" class="nav-item" data-view="tasks" onclick="loadView('tasks')">
+            <i class="fas fa-tasks"></i>
+            <span>My Objectives</span>
         </a>
         <a href="#" class="nav-item" data-view="team" onclick="loadView('team')">
-            <i class="fas fa-users"></i>
-            <span>Team Hub</span>
+            <i class="fas fa-users-cog"></i>
+            <span>Lead Hub</span>
         </a>
         <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
             <i class="fas fa-chart-line"></i>
@@ -170,19 +205,23 @@ function renderEmployeeSidebar() {
     nav.innerHTML = `
         <a href="#" class="nav-item active" data-view="overview" onclick="loadView('overview')">
             <i class="fas fa-th-large"></i>
-            <span>Dashboard</span>
+            <span>Overview</span>
         </a>
         <a href="#" class="nav-item" data-view="projects" onclick="loadView('projects')">
             <i class="fas fa-project-diagram"></i>
             <span>My Projects</span>
         </a>
+        <a href="#" class="nav-item" data-view="tasks" onclick="loadView('tasks')">
+            <i class="fas fa-tasks"></i>
+            <span>My Tasks</span>
+        </a>
         <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
             <i class="fas fa-briefcase"></i>
-            <span>Workload</span>
+            <span>Capacity</span>
         </a>
         <a href="#" class="nav-item" data-view="team" onclick="loadView('team')">
             <i class="fas fa-users"></i>
-            <span>Team Hub</span>
+            <span>Team Directory</span>
         </a>
     `;
 }
@@ -193,15 +232,308 @@ function loadView(view) {
     renderCurrentView();
 }
 
+let currentProjectTasks = [];
+
+async function openAssignTaskModal(projectId) {
+    const projects = await fetchLiveProjects();
+    const p = projects.find(proj => (proj._id === projectId || proj.id === projectId));
+    if (!p) return;
+    
+    currentCreatingProject = p;
+    
+    // Fetch current tasks for this project
+    try {
+        const res = await fetch(`http://localhost:5000/api/tasks/project/${projectId}`);
+        const data = await res.json();
+        currentProjectTasks = data.success ? data.data : [];
+    } catch (e) {
+        currentProjectTasks = [];
+    }
+
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        renderAssignTaskModalContent(false); // Start with board view
+    }
+}
+
+async function renderAssignTaskModalContent(showForm = false) {
+    const container = document.getElementById('modal-container');
+    const projectMembers = currentCreatingProject.team_members || [];
+    
+    const allEmployees = await fetchLiveEmployees();
+    const memberIds = projectMembers.map(m => String(m._id || m.id || m));
+    const members = allEmployees.filter(e => memberIds.includes(String(e._id || e.id)));
+    
+    const leadId = currentCreatingProject.team_lead && (currentCreatingProject.team_lead._id || currentCreatingProject.team_lead.id || currentCreatingProject.team_lead);
+    const lead = allEmployees.find(e => String(e._id || e.id) === String(leadId));
+    if (lead && !members.some(m => String(m._id || m.id) === String(leadId))) {
+        members.push(lead);
+    }
+
+    if (!showForm) {
+        // BOARD VIEW
+        container.innerHTML = `
+            <div class="modal-header">
+                <div class="modal-header-info">
+                    <h2>Mission Control: ${currentCreatingProject.name}</h2>
+                    <p>Current task deployments and team orchestration.</p>
+                </div>
+                <button class="close-modal" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 20px 30px;">
+                <div class="task-deployment-board">
+                    ${currentProjectTasks.length === 0 ? `
+                        <div class="empty-state-placeholder">
+                            <i class="fas fa-satellite-dish"></i>
+                            <p>No active tasks deployed to this stream yet.</p>
+                        </div>
+                    ` : `
+                        <div class="task-grid-board">
+                            ${currentProjectTasks.map(t => {
+                                const assigneeId = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
+                                const assignee = allEmployees.find(e => String(e._id || e.id) === String(assigneeId));
+                                return `
+                                <div class="task-deployment-card">
+                                    <div class="task-card-header">
+                                        <span class="p-tag p-${t.priority?.toLowerCase() || 'medium'}">${t.priority || 'Med'}</span>
+                                        <span class="s-tag s-${t.status?.toLowerCase().replace(' ', '-')}">${t.status}</span>
+                                    </div>
+                                    <h4 class="task-card-name">${t.name}</h4>
+                                    <div class="task-card-assignee">
+                                        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(assignee?.name || 'U')}&background=8b5cf6&color=fff" class="task-avatar">
+                                        <div class="assignee-meta">
+                                            <span class="a-name">${assignee?.name || 'Unknown'}</span>
+                                            <span class="a-role">${assignee?.role || 'Resource'}</span>
+                                        </div>
+                                    </div>
+                                    <div class="task-card-footer">
+                                        <span><i class="fas fa-clock"></i> ${t.hours}h</span>
+                                        <span><i class="fas fa-calendar-check"></i> ${new Date(t.deadline).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 20px 30px; background: var(--gray-50);">
+                <div style="display:flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="deployment-stats">
+                        <span class="d-stat"><strong>${currentProjectTasks.length}</strong> Deployed</span>
+                        <span class="d-stat"><strong>${currentProjectTasks.filter(t => t.status === 'Completed').length}</strong> Completed</span>
+                    </div>
+                    <button class="btn btn-primary" style="width:auto; padding: 12px 32px; border-radius: 12px;" onclick="renderAssignTaskModalContent(true)">
+                        <i class="fas fa-plus"></i> New Deployment
+                    </button>
+                </div>
+            </div>
+
+            <style>
+                .task-deployment-board { min-height: 300px; max-height: 500px; overflow-y: auto; padding: 10px 0; }
+                .empty-state-placeholder { text-align: center; padding: 80px 20px; color: var(--gray-400); }
+                .empty-state-placeholder i { font-size: 40px; margin-bottom: 20px; opacity: 0.3; }
+                
+                .task-grid-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+                .task-deployment-card { background: white; border: 1px solid var(--gray-100); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-sm); transition: all 0.3s ease; }
+                .task-deployment-card:hover { border-color: var(--primary-violet); transform: translateY(-3px); box-shadow: var(--shadow-md); }
+                
+                .task-card-header { display: flex; justify-content: space-between; margin-bottom: 15px; }
+                .p-tag, .s-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; padding: 4px 10px; border-radius: 100px; }
+                .p-high { background: #fee2e2; color: #991b1b; }
+                .p-medium { background: #fef3c7; color: #92400e; }
+                .p-low { background: #dcfce7; color: #166534; }
+                
+                .s-pending { background: #f3f4f6; color: #374151; }
+                .s-in-progress { background: #e0f2fe; color: #075985; }
+                .s-completed { background: #dcfce7; color: #166534; }
+
+                .task-card-name { font-size: 16px; font-weight: 700; margin-bottom: 18px; color: var(--gray-900); }
+                .task-card-assignee { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 10px; background: var(--gray-50); border-radius: 12px; }
+                .task-avatar { width: 32px; height: 32px; border-radius: 50%; border: 2px solid white; box-shadow: var(--shadow-sm); }
+                .assignee-meta { display: flex; flex-direction: column; }
+                .a-name { font-size: 13px; font-weight: 700; color: var(--gray-900); }
+                .a-role { font-size: 10px; font-weight: 600; color: var(--gray-400); text-transform: uppercase; }
+                
+                .task-card-footer { display: flex; justify-content: space-between; border-top: 1px solid var(--gray-100); padding-top: 15px; font-size: 12px; font-weight: 600; color: var(--gray-500); }
+                .deployment-stats { display: flex; gap: 20px; }
+                .d-stat { font-size: 12px; color: var(--gray-600); }
+            </style>
+        `;
+    } else {
+        // FORM VIEW
+        container.innerHTML = `
+            <div class="modal-header">
+                <div class="modal-header-info">
+                    <button class="back-link" onclick="renderAssignTaskModalContent(false)" style="background:none; border:none; color:var(--primary-violet); font-weight:600; cursor:pointer; padding:0; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                        <i class="fas fa-arrow-left" style="font-size:10px;"></i> Back to Mission Board
+                    </button>
+                    <h2>New Deployment</h2>
+                    <p>Provisioning tasks for <strong>${currentCreatingProject.name}</strong></p>
+                </div>
+                <button class="close-modal" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 30px;">
+                <form id="modal-assign-task-form" onsubmit="submitModalTaskAssignment(event)">
+                    <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="modern-label">Task Name *</label>
+                            <input type="text" id="m-task-name" class="modern-input" placeholder="e.g. Implement User Authentication" required>
+                        </div>
+                        
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="modern-label">Description</label>
+                            <textarea id="m-task-desc" class="modern-textarea" style="min-height: 80px;" placeholder="Provide technical context and goals..."></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="modern-label">Appoint Assignee *</label>
+                            <div class="custom-select-wrapper" id="m-assignee-wrapper">
+                                <div class="custom-select-trigger">
+                                    <span>— Select Talent —</span>
+                                    <i class="fas fa-chevron-down" style="color:var(--gray-300); font-size:12px;"></i>
+                                </div>
+                                <div class="custom-options"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="modern-label">Target Deadline *</label>
+                            <div class="custom-date-wrapper" id="m-deadline-wrapper">
+                                <input type="text" id="m-task-deadline" class="modern-input" placeholder="Select Date" readonly style="cursor:pointer; background:white;">
+                                <i class="fas fa-calendar-alt" style="position:absolute; right:16px; top:50%; transform:translateY(-50%); color:var(--gray-300); pointer-events:none;"></i>
+                                <div class="custom-date-picker"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="modern-label">Effort Estimation (Hours)</label>
+                            <input type="number" id="m-task-hours" class="modern-input" min="1" max="100" value="8" required>
+                        </div>
+
+                    <div class="form-group">
+                        <label class="modern-label">Priority Level</label>
+                        <select id="m-task-priority" class="modern-input styled-select" style="height: 48px;">
+                            <option value="Low">Low Priority</option>
+                            <option value="Medium" selected>Medium Priority</option>
+                            <option value="High">High Priority</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer" style="padding: 24px 30px;">
+            <div style="display:flex; justify-content: flex-end; gap:12px; width: 100%;">
+                <button class="btn btn-secondary" style="border-radius:12px; width: auto; padding: 12px 28px;" onclick="renderAssignTaskModalContent(false)">Cancel</button>
+                <button id="modal-deploy-task-btn" class="btn btn-primary" style="border-radius:12px; background:var(--violet-gradient); border:none; padding:12px 36px; width: auto;">
+                    Deploy Task <i class="fas fa-paper-plane" style="margin-left:8px; font-size:12px;"></i>
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Initialize custom components
+    let selectedAssigneeId = '';
+    let selectedDeadline = null;
+
+    const selectOptions = members.map(m => ({
+        value: m._id || m.id,
+        label: `${m.name} — ${m.role} (${m.workload_percentage || 0}% Load)`
+    }));
+
+    initializeCustomSelect('m-assignee-wrapper', selectOptions, (val) => {
+        selectedAssigneeId = val;
+    });
+
+    initializeCustomDatePicker('m-deadline-wrapper', (date) => {
+        selectedDeadline = date;
+    });
+
+    document.getElementById('modal-deploy-task-btn').onclick = async () => {
+        const submitBtn = document.getElementById('modal-deploy-task-btn');
+        const name = document.getElementById('m-task-name').value.trim();
+        const description = document.getElementById('m-task-desc').value.trim();
+        const hours = parseInt(document.getElementById('m-task-hours').value);
+        const priority = document.getElementById('m-task-priority').value;
+        const requested_by = localStorage.getItem('userId');
+        const company_id = localStorage.getItem('companyId');
+
+            if (!name) { showToast('Task name is required.', 'warning'); return; }
+            if (!selectedAssigneeId) { showToast('Please select an assignee.', 'warning'); return; }
+            if (!selectedDeadline) { showToast('Please select a deadline.', 'warning'); return; }
+
+            const emp = members.find(m => String(m._id || m.id) === String(selectedAssigneeId));
+            const currentLoad = emp ? (emp.workload_percentage || 0) : 0;
+            const estimatedImpact = Math.round(hours * 2.5);
+            if (currentLoad + estimatedImpact > 100) {
+               if (!confirm(`Capacity Alert: ${emp.name} is reaching peak load. Continue?`)) return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
+
+            try {
+                const res = await fetch('http://localhost:5000/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name, description, hours, priority,
+                        assigned_to: selectedAssigneeId,
+                        project_id: currentCreatingProject._id || currentCreatingProject.id,
+                        company_id, requested_by,
+                        deadline: selectedDeadline,
+                        required_skills: [] 
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Successfully deployed to employee orbit.', 'success');
+                    
+                    // RE-FETCH TASKS for real-time board update
+                    const tRes = await fetch(`http://localhost:5000/api/tasks/project/${currentCreatingProject._id || currentCreatingProject.id}`);
+                    const tData = await tRes.json();
+                    currentProjectTasks = tData.success ? tData.data : [];
+                    
+                    // Return to board view
+                    renderAssignTaskModalContent(false);
+
+                    addNotification(
+                        'info', // type (info, success, warning, danger)
+                        'Active Strategy Assigned',
+                        `Objective: ${name}`,
+                        `Your Lead has deployed a new task to your queue in project ${currentCreatingProject.name}.`,
+                        'tasks',
+                        currentCreatingProject._id || currentCreatingProject.id,
+                        null,
+                        null,
+                        selectedAssigneeId // Targeted recipient
+                    );
+                } else {
+                    showToast(data.error, 'danger');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Deploy Task <i class="fas fa-paper-plane" style="margin-left:8px; font-size:12px;"></i>';
+                }
+            } catch (err) {
+                showToast('Sync failure.', 'danger');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Deploy Task <i class="fas fa-paper-plane" style="margin-left:8px; font-size:12px;"></i>';
+            }
+        };
+    }
+}
+
 async function openTeamSetupModal(projectId) {
     const projects = await fetchLiveProjects();
-    const p = projects.find(proj => proj._id === projectId);
+    const p = projects.find(proj => (proj._id === projectId || proj.id === projectId));
     if (!p) return;
     
     currentCreatingProject = p;
     const overlay = document.getElementById('modal-overlay');
-    overlay.style.display = 'flex';
-    renderTeamSetupStep();
+    if (overlay) {
+        overlay.style.display = 'flex';
+        renderTeamSetupStep();
+    }
 }
 
 function renderCurrentView() {
@@ -493,7 +825,7 @@ async function renderProjectCreationStep() {
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing System...';
 
         try {
-            const res = await fetch('/api/projects', {
+            const res = await fetch('http://localhost:5000/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, deadline, description: desc, team_lead: lead, priority: selectedPriority, company_id: companyId })
@@ -648,7 +980,7 @@ async function renderTeamSetupStep() {
         finishBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
 
         try {
-            await fetch(`/api/projects/${currentCreatingProject._id}/team`, {
+            await fetch(`http://localhost:5000/api/projects/${currentCreatingProject._id}/team`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ team_members: selectedIds })
@@ -1151,13 +1483,10 @@ function renderOrgView(container) { container.innerHTML = '<h2>Org Settings</h2>
 function openTaskDetails(name) { alert(`Thread for: ${name}\nSystem: No active messages.`); }
 // Temporary integration for Assign Task / Manage Team mock URLs.
 window.openTeamSetup = function(projectId) {
-    // We would pass the project id to the external page via localStorage or query param
-    localStorage.setItem('currentSetupProject', projectId);
-    window.location.href = 'team-setup.html';
+    openTeamSetupModal(projectId);
 }
 window.openAssignTask = function(projectId) {
-    localStorage.setItem('currentAssignProject', projectId);
-    window.location.href = 'assign-task.html';
+    openAssignTaskModal(projectId);
 }
 
 // ── Project Menu Actions ──
@@ -1211,7 +1540,7 @@ async function deleteProject(event, pid) {
     showToast('Executing termination protocols...', 'info');
 
     try {
-        const res = await fetch(`/api/projects/${pid}/delete`, { 
+        const res = await fetch(`http://localhost:5000/api/projects/${pid}/delete`, { 
             method: 'POST' 
         });
         const data = await res.json();
@@ -1231,64 +1560,250 @@ async function deleteProject(event, pid) {
 }
 
 // Global click to close menus
-window.addEventListener('click', () => {
-    document.querySelectorAll('.project-context-menu').forEach(m => m.classList.remove('show'));
-});
-
 function openProjectDetails(projectId) {
     const p = FlowSenseState.projects.find(proj => (proj._id === projectId || proj.id === projectId));
     if(!p) return;
     FlowSenseState.currentView = 'project_details';
     const container = document.getElementById('view-container');
     const role = localStorage.getItem('userRole'); 
-    const userName = localStorage.getItem('userName');
+    const userId = localStorage.getItem('userId');
     
-    // Check if the current user is the "Team Lead" for this project
-    // (mock check: if the project's lead name contains their user name)
-    const isLead = (role === 'employee' || role === 'company') && (p.lead === userName || p.lead.includes("Sharma")); // fallback to Anita for demo
+    // Resolve Lead Identity
+    const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+    const leadEmployee = liveData.employees.find(e => String(e._id || e.id) === String(leadId));
+    const leadName = leadEmployee ? leadEmployee.name : 'Unknown Lead';
+    const leadRole = leadEmployee ? leadEmployee.role : 'Manager';
+    
+    // Security verification
+    const isLead = String(leadId) === String(userId);
 
-    let tabsContent = '';
+    let actionButtons = '';
     
     if (role === 'company') {
-        tabsContent = `
-            <div class="project-details-section">
-                <h3>High-Level Overview</h3>
-                <p>Status: ${p.status}</p>
-                <p>Progress: ${p.progress}%</p>
-                <button class="btn btn-secondary" onclick="loadView('projects')">Back to Projects</button>
-            </div>
-        `;
-    } else if (isLead) {
-        tabsContent = `
-            <div class="project-details-tabs" style="margin-top:20px; display:flex; gap:10px;">
-                <button class="btn btn-primary" onclick="alert('Overview view placeholder')">Overview</button>
-                <button class="btn btn-secondary" onclick="openTeamSetupModal('${p.id}')">Manage Team</button>
-                <button class="btn btn-secondary" onclick="window.location.href='assign-task.html'">Assign Tasks</button>
-            </div>
-            <div class="project-details-section" style="margin-top:20px;">
-                <button class="btn btn-secondary btn-sm" onclick="loadView('projects')">Back to Projects</button>
+        actionButtons = `
+            <div class="project-actions-row">
+                <button class="btn btn-secondary btn-glass" onclick="loadView('projects')"><i class="fas fa-arrow-left"></i> Back</button>
+                <button class="btn btn-primary" onclick="alert('Manage this project')">Control Panel</button>
             </div>
         `;
     } else {
-        // Standard Employee
-        tabsContent = `
-            <div class="project-details-tabs" style="margin-top:20px; display:flex; gap:10px;">
-                <button class="btn btn-primary">My Tasks</button>
-                <button class="btn btn-secondary" onclick="alert('Opening chat component...')">Chat / Requests</button>
-            </div>
-            <div class="project-details-section" style="margin-top:20px;">
-                <button class="btn btn-secondary btn-sm" onclick="loadView('projects')">Back to Projects</button>
+        // Unified action row for Leads and Members to ensure everyone can see their tasks
+        const leadActions = isLead ? `
+            <button class="btn btn-primary" onclick="openAssignTaskModal('${p._id || p.id}')"><i class="fas fa-plus"></i> Assign Tasks</button>
+            <button class="btn btn-secondary" onclick="openTeamSetupModal('${p._id || p.id}')"><i class="fas fa-users-cog"></i> Manage Team</button>
+        ` : '';
+
+        actionButtons = `
+            <div class="project-actions-row">
+                <button class="btn btn-secondary btn-glass" onclick="loadView('projects')"><i class="fas fa-arrow-left"></i> Back</button>
+                ${leadActions}
+                <button class="btn btn-primary" style="background:var(--violet-gradient);" onclick="loadView('tasks')"><i class="fas fa-tasks"></i> My Tasks</button>
+                <button class="btn btn-secondary" onclick="alert('Opening secure channel...')"><i class="fas fa-comments"></i> Chat / Requests</button>
             </div>
         `;
     }
 
     container.innerHTML = `
-        <div class="welcome-header">
-            <h2>${p.name}</h2>
-            <p>${p.description}</p>
-            <p style="font-size:12px; color:var(--primary-violet); margin-top:5px;"><i class="fas fa-crown"></i> Lead: ${p.lead}</p>
+        <div class="project-premium-header">
+            <div class="header-main-content">
+                <div class="project-title-area">
+                    <span class="project-status-tag tag-${p.status.toLowerCase().replace(' ', '-')}">${p.status}</span>
+                    <h1 class="project-title-text">${p.name}</h1>
+                    <p class="project-desc-text">${p.description || 'No description provided for this initiative.'}</p>
+                </div>
+                
+                <div class="project-meta-grid">
+                    <div class="meta-item">
+                        <div class="meta-icon"><i class="fas fa-crown"></i></div>
+                        <div class="meta-info">
+                            <span class="meta-label">Project Lead</span>
+                            <span class="meta-value">${leadName}</span>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-icon"><i class="fas fa-calendar-alt"></i></div>
+                        <div class="meta-info">
+                            <span class="meta-label">Deadline</span>
+                            <span class="meta-value">${new Date(p.deadline).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-icon"><i class="fas fa-signal"></i></div>
+                        <div class="meta-info">
+                            <span class="meta-label">Priority</span>
+                            <span class="meta-value priority-${p.priority.toLowerCase()}">${p.priority}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="project-progress-section">
+                <div class="progress-bar-container">
+                    <div class="progress-header">
+                        <span class="progress-label">Global Completion</span>
+                        <span class="progress-percentage">${p.progress}%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width: ${p.progress}%"></div>
+                    </div>
+                </div>
+            </div>
+            
+            ${actionButtons}
         </div>
-        ${tabsContent}
+
+        <style>
+            .project-premium-header {
+                background: white;
+                border-radius: var(--radius-xl);
+                padding: 40px;
+                box-shadow: var(--shadow-premium);
+                animation: fadeIn 0.5s ease-out;
+                border: 1px solid var(--gray-100);
+            }
+            .header-main-content {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 40px;
+                margin-bottom: 30px;
+                flex-wrap: wrap;
+            }
+            .project-title-area {
+                flex: 1;
+                min-width: 300px;
+            }
+            .project-status-tag {
+                display: inline-block;
+                padding: 6px 14px;
+                border-radius: 100px;
+                font-size: 12px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 16px;
+            }
+            .tag-active { background: #dcfce7; color: #166534; }
+            .tag-planning { background: #f3e8ff; color: #6b21a8; }
+            .tag-on-hold { background: #fef3c7; color: #92400e; }
+            
+            .project-title-text {
+                font-size: 36px;
+                font-weight: 800;
+                color: var(--gray-900);
+                margin-bottom: 12px;
+                letter-spacing: -0.5px;
+            }
+            .project-desc-text {
+                font-size: 16px;
+                color: var(--gray-600);
+                line-height: 1.6;
+                max-width: 600px;
+            }
+            .project-meta-grid {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 20px;
+                background: var(--gray-50);
+                padding: 24px;
+                border-radius: var(--radius-lg);
+                border: 1px solid var(--gray-100);
+                min-width: 280px;
+            }
+            .meta-item {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+            }
+            .meta-icon {
+                width: 40px;
+                height: 40px;
+                background: white;
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--primary-violet);
+                font-size: 18px;
+                box-shadow: var(--shadow-sm);
+            }
+            .meta-info {
+                display: flex;
+                flex-direction: column;
+            }
+            .meta-label {
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--gray-400);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .meta-value {
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--gray-900);
+            }
+            .priority-high { color: #ef4444; }
+            .priority-medium { color: #f59e0b; }
+            .priority-low { color: #10b981; }
+
+            .project-progress-section {
+                margin: 30px 0;
+                padding: 30px 0;
+                border-top: 1px solid var(--gray-100);
+                border-bottom: 1px solid var(--gray-100);
+            }
+            .progress-header {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 12px;
+            }
+            .progress-label {
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--gray-900);
+            }
+            .progress-percentage {
+                font-size: 14px;
+                font-weight: 800;
+                color: var(--primary-violet);
+            }
+            .progress-track {
+                height: 12px;
+                background: var(--gray-100);
+                border-radius: 100px;
+                overflow: hidden;
+            }
+            .progress-fill {
+                height: 100%;
+                background: var(--violet-gradient);
+                border-radius: 100px;
+                transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .project-actions-row {
+                display: flex;
+                gap: 15px;
+                flex-wrap: wrap;
+            }
+            .project-actions-row .btn {
+                width: auto;
+                min-width: 160px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+            }
+            .btn-glass {
+                background: white;
+                color: var(--gray-900);
+                border: 1px solid var(--gray-200);
+                box-shadow: var(--shadow-sm);
+            }
+            .btn-glass:hover {
+                background: var(--gray-50);
+                border-color: var(--gray-300);
+            }
+        </style>
     `;
 }
 
@@ -1302,8 +1817,11 @@ document.addEventListener('DOMContentLoaded', checkAuth);
 
 function renderEmployeeOverview(container) {
     const name = localStorage.getItem("userName") || "Employee";
-    const empId = (name.includes("Rahul")) ? "emp1" : "emp2";
-    const myTasks = FlowSenseState.tasks.filter(t => t.assigneeId === empId);
+    const userId = localStorage.getItem("userId");
+    const myTasks = FlowSenseState.tasks.filter(t => {
+        const tid = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
+        return String(tid) === String(userId);
+    });
     const myWorkload = Math.round(myTasks.reduce((acc, current) => acc + (current.hours * 2.5), 0));
 
     container.innerHTML = `
@@ -1342,7 +1860,7 @@ function renderEmployeeOverview(container) {
                     <h3>Upcoming Deadlines</h3>
                 </div>
                 <div>
-                    ${myTasks.length > 0 ? myTasks.map(t => renderTaskItem(t.title, t.projectName, name, t.deadline, t.status)).join("") : "<p>No pending tasks.</p>"}
+                    ${myTasks.length > 0 ? myTasks.map(t => renderTaskItem(t.name, t.project_id?.name || 'Project', name, new Date(t.deadline).toLocaleDateString(), t.status)).join("") : "<p>No pending tasks.</p>"}
                 </div>
             </div>
             <div class="card">
@@ -1350,11 +1868,11 @@ function renderEmployeeOverview(container) {
                     <h3>Project Participation</h3>
                 </div>
                 <div class="workload-list">
-                    ${FlowSenseState.projects.filter(p => myTasks.some(t => t.projectName === p.name)).map(p => `
+                    ${FlowSenseState.projects.filter(p => myTasks.some(t => t.project_id?._id === p._id)).map(p => `
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f8fafc;">
                             <div>
                                 <p style="font-weight:600; font-size:14px;">${p.name}</p>
-                                <p style="font-size:12px; color:var(--gray-600);">${p.lead} (Lead)</p>
+                                <p style="font-size:12px; color:var(--gray-600);">${p.lead || 'Lead'} (Lead)</p>
                             </div>
                             <span class="badge" style="background:#f3f4f6; color:var(--gray-600); font-size:11px; padding:4px 8px; border-radius:10px;">${p.status}</span>
                         </div>
@@ -1366,79 +1884,346 @@ function renderEmployeeOverview(container) {
 }
 
 function renderEmployeeProjectsView(container) {
-    const name = localStorage.getItem("userName") || "Employee";
-    const empId = (name.includes("Rahul")) ? "emp1" : "emp2";
-    const myTasks = FlowSenseState.tasks.filter(t => t.assigneeId === empId);
-    const myProjects = FlowSenseState.projects.filter(p => myTasks.some(t => t.projectName === p.name));
+    const userId = localStorage.getItem("userId");
+    
+    // Filter projects
+    const myProjects = FlowSenseState.projects.filter(p => {
+        const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+        const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(userId));
+        const leadVal = p.team_lead;
+        const isLead = leadVal && String(leadVal._id || leadVal.id || leadVal) === String(userId);
+        return isMember || isLead;
+    });
+
+    if (FlowSenseState.projects.length === 0) {
+        container.innerHTML = `
+        <div class="welcome-header">
+            <h2>My Projects</h2>
+            <p style="color: var(--primary-violet); font-weight: 500;">No projects found in your workspace.</p>
+        </div>`;
+        return;
+    }
 
     container.innerHTML = `
         <div class="welcome-header">
             <h2>My Projects</h2>
-            <p>You are contributing to ${myProjects.length} active projects.</p>
+            <p>You are participating in <strong>${myProjects.length}</strong> active initiatives.</p>
         </div>
-        <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
-            ${myProjects.map(p => `
-                <div class="card" style="cursor:pointer;" onclick="openProjectDetails('${p.id}')">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
-                        <span class="badge" style="background:#dcfce7; color:#166534; font-size:11px; padding:4px 10px; border-radius:20px;">Participating</span>
+        
+        <div class="projects-grid">
+            ${myProjects.map(p => {
+                const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+                const leadEmployee = liveData.employees.find(e => String(e._id || e.id) === String(leadId));
+                const leadName = leadEmployee ? leadEmployee.name : 'Unknown';
+                const isLead = String(leadId) === String(userId);
+
+                return `
+                <div class="project-card-premium" onclick="openProjectDetails('${p._id || p.id}')">
+                    <div class="card-header-top">
+                        <span class="status-indicator status-${p.status.toLowerCase().replace(' ', '-')}">${p.status}</span>
+                        ${isLead ? '<span class="lead-badge"><i class="fas fa-crown"></i> Lead</span>' : ''}
                     </div>
-                    <h3 style="margin-bottom:8px;">${p.name}</h3>
-                    <p style="font-size:13px; color:var(--gray-600); margin-bottom:20px;">${p.description}</p>
-                    <div style="display:flex; align-items:center; gap:10px; border-top:1px solid #f3f4f6; padding-top:15px;">
-                        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(p.lead)}&background=8b5cf6&color=fff" style="width:32px; height:32px; border-radius:50%;">
-                        <div style="flex:1;">
-                            <p style="font-size:12px; font-weight:600;">${p.lead}</p>
-                            <p style="font-size:11px; color:var(--gray-600);">Project Lead</p>
+                    
+                    <h3 class="card-title">${p.name}</h3>
+                    <p class="card-desc">${p.description || 'Secure project data stream.'}</p>
+                    
+                    <div class="card-progress-zone">
+                        <div class="progress-info">
+                            <span>Completion</span>
+                            <span>${p.progress}%</span>
                         </div>
-                        <button class="btn btn-outline btn-xs" onclick="alert(\"Sending contact request to ${p.lead}\")">Contact Lead</button>
+                        <div class="mini-progress-track">
+                            <div class="mini-progress-fill" style="width: ${p.progress}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-footer-meta">
+                        <div class="lead-meta">
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(leadName)}&background=8b5cf6&color=fff" class="mini-avatar">
+                            <div class="lead-text-box">
+                                <span class="lead-label">Lead</span>
+                                <span class="lead-name">${leadName}</span>
+                            </div>
+                        </div>
+                        <div class="deadline-meta">
+                            <span class="meta-label">Deadline</span>
+                            <span class="meta-date">${new Date(p.deadline).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
+                        </div>
                     </div>
                 </div>
-            `).join("")}
+                `;
+            }).join("")}
         </div>
+
+        <style>
+            .projects-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+                gap: 25px;
+                margin-top: 30px;
+            }
+            .project-card-premium {
+                background: white;
+                border-radius: var(--radius-lg);
+                padding: 24px;
+                border: 1px solid var(--gray-100);
+                box-shadow: var(--shadow-sm);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                cursor: pointer;
+                position: relative;
+                overflow: hidden;
+            }
+            .project-card-premium:hover {
+                transform: translateY(-5px);
+                box-shadow: var(--shadow-lg);
+                border-color: var(--primary-violet);
+            }
+            .card-header-top {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 16px;
+            }
+            .status-indicator {
+                font-size: 10px;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                padding: 4px 10px;
+                border-radius: 100px;
+            }
+            .status-active { background: #dcfce7; color: #166534; }
+            .status-planning { background: #f3e8ff; color: #6b21a8; }
+            .status-on-hold { background: #fef3c7; color: #92400e; }
+            
+            .lead-badge {
+                font-size: 10px;
+                font-weight: 700;
+                color: var(--primary-violet);
+                background: var(--primary-light-purple);
+                padding: 4px 10px;
+                border-radius: 100px;
+            }
+            .card-title {
+                font-size: 20px;
+                font-weight: 700;
+                color: var(--gray-900);
+                margin-bottom: 8px;
+            }
+            .card-desc {
+                font-size: 14px;
+                color: var(--gray-600);
+                margin-bottom: 20px;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+                line-height: 1.5;
+            }
+            .card-progress-zone {
+                margin-bottom: 20px;
+            }
+            .progress-info {
+                display: flex;
+                justify-content: space-between;
+                font-size: 12px;
+                font-weight: 600;
+                margin-bottom: 8px;
+            }
+            .mini-progress-track {
+                height: 6px;
+                background: var(--gray-100);
+                border-radius: 100px;
+                overflow: hidden;
+            }
+            .mini-progress-fill {
+                height: 100%;
+                background: var(--violet-gradient);
+                border-radius: 100px;
+            }
+            .card-footer-meta {
+                padding-top: 16px;
+                border-top: 1px solid var(--gray-50);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .lead-meta {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .mini-avatar {
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: var(--shadow-sm);
+            }
+            .lead-text-box {
+                display: flex;
+                flex-direction: column;
+            }
+            .lead-label {
+                font-size: 9px;
+                font-weight: 600;
+                color: var(--gray-400);
+                text-transform: uppercase;
+            }
+            .lead-name {
+                font-size: 13px;
+                font-weight: 700;
+                color: var(--gray-900);
+            }
+            .deadline-meta {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+            }
+            .meta-date {
+                font-size: 13px;
+                font-weight: 700;
+                color: var(--gray-900);
+            }
+        </style>
     `;
 }
 
 function renderEmployeeTasksView(container) {
-    const name = localStorage.getItem("userName") || "Employee";
-    const empId = (name.includes("Rahul")) ? "emp1" : "emp2";
-    const myTasks = FlowSenseState.tasks.filter(t => t.assigneeId === empId);
+    const userId = localStorage.getItem("userId");
+    const activeTasks = FlowSenseState.tasks.filter(t => {
+        const tid = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
+        return String(tid) === String(userId);
+    });
+
+    // Get unique projects for the filter
+    const myProjects = [];
+    const pSet = new Set();
+    activeTasks.forEach(t => {
+        const pid = t.project_id?._id || t.project_id;
+        if (pid && !pSet.has(String(pid))) {
+            pSet.add(String(pid));
+            const p = FlowSenseState.projects.find(proj => String(proj._id || proj.id) === String(pid));
+            myProjects.push(p || { _id: pid, name: t.project_id?.name || 'Assigned Project' });
+        }
+    });
+
+    const selectedPid = FlowSenseState.currentSelectedProjectForTasks;
+    const filteredTasks = selectedPid === 'all' 
+        ? activeTasks 
+        : activeTasks.filter(t => String(t.project_id?._id || t.project_id) === String(selectedPid));
+
+    const columns = [
+        { id: 'Pending', label: 'To Do', color: '#64748b' },
+        { id: 'In Progress', label: 'In Progress', color: '#3b82f6' },
+        { id: 'Testing', label: 'Testing', color: '#f59e0b' },
+        { id: 'Completed', label: 'Completed', color: '#10b981' }
+    ];
 
     container.innerHTML = `
-        <div class="welcome-header">
-            <h2>My Work Board</h2>
-            <p>Total of ${myTasks.length} tasks assigned to you.</p>
+        <div class="welcome-header" style="margin-bottom: 30px; display:flex; justify-content: space-between; align-items: flex-end;">
+            <div>
+                <h2 style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Strategic Kanban</h2>
+                <p style="color: var(--gray-600); margin-top: 4px;">Orchestrating ${filteredTasks.length} objectives across ${selectedPid === 'all' ? 'all streams' : 'selected stream'}.</p>
+            </div>
+            
+            <div style="display:flex; gap:12px; align-items:center;">
+                <label style="font-size:12px; font-weight:700; color:var(--gray-500); text-transform:uppercase;">Stream Filter:</label>
+                <select class="modern-input" id="task-project-filter" style="width: 200px; height: 40px; font-size: 13px; border-radius: 10px; padding: 0 12px;">
+                    <option value="all" ${selectedPid === 'all' ? 'selected' : ''}>All Projects</option>
+                    ${myProjects.map(p => `<option value="${p._id}" ${selectedPid === String(p._id) ? 'selected' : ''}>${p.name}</option>`).join('')}
+                </select>
+            </div>
         </div>
-        <div class="card" style="padding:0;">
-             <table style="width:100%; border-collapse: collapse;">
-                <thead style="background:#f8fafc; border-bottom:1px solid #f1f5f9;">
-                    <tr style="text-align:left; font-size:12px; color:var(--gray-600); text-transform:uppercase; letter-spacing:0.5px;">
-                        <th style="padding:16px 24px;">Task Name</th>
-                        <th style="padding:16px 24px;">Project</th>
-                        <th style="padding:16px 24px;">Est. Hours</th>
-                        <th style="padding:16px 24px;">Deadline</th>
-                        <th style="padding:16px 24px;">Actions</th>
-                    </tr>
-                </thead>
-                <tbody style="font-size:14px;">
-                    ${myTasks.map(t => `
-                        <tr style="border-bottom:1px solid #f1f5f9;">
-                            <td style="padding:16px 24px; font-weight:600;">${t.title}</td>
-                            <td style="padding:16px 24px; color:var(--gray-600);">${t.projectName}</td>
-                            <td style="padding:16px 24px;">${t.hours}h</td>
-                            <td style="padding:16px 24px; color:${t.status === "High-Risk" ? "#ef4444" : "#10b981"}; font-weight:600;">${t.deadline}</td>
-                            <td style="padding:16px 24px;">
-                                <div style="display:flex; gap:8px;">
-                                    <button class="btn btn-outline btn-xs" onclick="openTaskDetails('${t.title}')"><i class="fas fa-comments"></i> Discuss</button>
-                                    <button class="btn btn-outline btn-xs" onclick="requestExtension('${t.title}')" style="color:var(--primary-violet); border-color:var(--primary-light-purple);"><i class="fas fa-clock"></i> Request Extension</button>
+
+        <div class="kanban-board" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; align-items: start;">
+            ${columns.map(col => {
+                const colTasks = filteredTasks.filter(t => t.status === col.id);
+                return `
+                    <div class="kanban-column" style="background: rgba(248, 250, 252, 0.5); border-radius: 16px; min-height: 600px; display:flex; flex-direction: column; border: 1px solid #f1f5f9;">
+                        <div class="kanban-header" style="padding: 16px; display:flex; justify-content: space-between; align-items: center; border-bottom: 2px solid ${col.color}20;">
+                            <h3 style="font-size: 13px; font-weight: 800; color: var(--gray-800); text-transform: uppercase; letter-spacing: 0.5px; display:flex; align-items: center; gap: 8px;">
+                                <span style="width:8px; height:8px; background:${col.color}; border-radius:50%; display:inline-block;"></span>
+                                ${col.label}
+                            </h3>
+                            <span style="font-size: 11px; font-weight: 700; background: #fff; color: ${col.color}; border: 1px solid ${col.color}40; padding: 2px 8px; border-radius: 20px;">${colTasks.length}</span>
+                        </div>
+                        <div class="kanban-items" style="padding: 12px; display:flex; flex-direction: column; gap: 12px; flex-grow: 1;">
+                            ${colTasks.map(t => `
+                                <div class="kanban-card" style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; position:relative;">
+                                    <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                        <span style="font-size: 10px; font-weight: 800; color: var(--primary-violet); background: var(--primary-light-purple); padding: 2px 8px; border-radius: 6px;">${t.project_id?.name || 'Task'}</span>
+                                        <div class="dropdown-container" style="position:relative;">
+                                            <button class="btn-xs" style="background:none; border:none; color:var(--gray-400); cursor:pointer;" onclick="toggleTaskMenu(event, '${t._id}')">
+                                                <i class="fas fa-ellipsis-v"></i>
+                                            </button>
+                                            <div id="menu-${t._id}" class="task-menu" style="display:none; position:absolute; right:0; top:20px; background:white; border-radius:8px; box-shadow: var(--shadow-lg); z-index:100; width:150px; border:1px solid #f1f5f9;">
+                                                ${columns.filter(c => c.id !== t.status).map(c => `
+                                                    <div class="menu-item-kanban" onclick="updateTaskStatus('${t._id}', '${c.id}')" style="padding:10px 14px; font-size:12px; cursor:pointer; color:var(--gray-700); transition: background 0.2s;">
+                                                        <i class="fas fa-arrow-right" style="font-size:10px; margin-right:8px; color:var(--gray-300);"></i> Move to ${c.label}
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <h4 style="font-size: 15px; font-weight: 700; color: var(--gray-900); margin-bottom: 6px;">${t.name}</h4>
+                                    <p style="font-size: 12px; color: var(--gray-600); line-height: 1.5; margin-bottom: 16px;">${t.description ? (t.description.length > 70 ? t.description.substring(0, 67) + '...' : t.description) : 'No details.'}</p>
+                                    
+                                    <div style="display:flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px dashed #e2e8f0;">
+                                        <div style="display:flex; align-items: center; gap: 6px; color: var(--gray-500); font-size: 11px;">
+                                            <i class="far fa-calendar-alt"></i>
+                                            <span>${new Date(t.deadline).toLocaleDateString()}</span>
+                                        </div>
+                                        <div style="font-size: 11px; font-weight: 700; color: var(--gray-700);">
+                                            ${t.hours}h
+                                        </div>
+                                    </div>
                                 </div>
-                            </td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
+                            `).join('')}
+                            ${colTasks.length === 0 ? `<div style="text-align:center; padding: 40px 20px; color: var(--gray-300); font-size: 12px; border: 2px dashed #f1f5f9; border-radius:12px;">No tasks here</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
         </div>
     `;
+
+    // Event Listeners
+    document.getElementById('task-project-filter').onchange = (e) => {
+        FlowSenseState.currentSelectedProjectForTasks = e.target.value;
+        renderEmployeeTasksView(container);
+    };
 }
+
+// Global functions for Kanban
+window.toggleTaskMenu = (e, tid) => {
+    e.stopPropagation();
+    document.querySelectorAll('.task-menu').forEach(m => { if(m.id !== `menu-${tid}`) m.style.display = 'none'; });
+    const menu = document.getElementById(`menu-${tid}`);
+    if (menu) {
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+};
+
+window.updateTaskStatus = async (tid, newStatus) => {
+    showToast('Updating objective status...', 'info');
+    try {
+        const res = await fetch(`http://localhost:5000/api/tasks/${tid}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Strategic board synchronized.', 'success');
+            await fetchLiveTasks(); 
+            await fetchLiveEmployees(); 
+            renderCurrentView();    
+        }
+    } catch (e) {
+        showToast('Communication fault with backend.', 'danger');
+    }
+};
 
 function requestExtension(taskName) {
     showToast(`Extension request for "${taskName}" sent to your Team Lead.`, 'info');
@@ -1537,16 +2322,18 @@ let notificationFilter = 'all';
 let expandedNotifId = null;
 let FlowSenseNotifications = []; // Purged static notifications
 
-async function addNotification(type, title, desc, longDesc, category, projectLink = null, action = null) {
+async function addNotification(type, title, desc, longDesc, category, projectLink = null, action = null, targetRole = null, recipientId = null) {
     const companyId = getCompanyId();
     if (!companyId) return;
 
     try {
-        const res = await fetch('/api/notifications', {
+        const res = await fetch('http://localhost:5000/api/notifications', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 company_id: companyId,
+                recipient_id: recipientId,
+                targetRole: targetRole,
                 type, title, description: desc, longDescription: longDesc, 
                 category, projectLink, action
             })
@@ -1628,7 +2415,7 @@ function renderNotificationsList() {
                         <div class="notif-item-desc">${n.desc}</div>
                         ${isExpanded ? `
                             <div class="notif-expanded-area">
-                                <p class="notif-long-text">${n.longDesc}</p>
+                                ${n.longDesc ? `<p class="notif-long-text">${n.longDesc}</p>` : ''}
                                 <div class="notif-action-cluster">
                                     ${!n.read ? `<button class="btn-notif-action primary" onclick="markAsRead(event, '${n.id}')">Acknowledge</button>` : ''}
                                     ${n.projectLink ? `<button class="btn-notif-action secondary" onclick="viewProjectContext(event, '${n.projectLink}')">Review Project</button>` : ''}
@@ -1683,7 +2470,7 @@ async function markAllRead(e) {
     if (!companyId) return;
 
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
+        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             FlowSenseNotifications.forEach(n => n.read = true);
@@ -1698,7 +2485,7 @@ async function markAllRead(e) {
 async function markAsRead(e, id) {
     if (e) e.stopPropagation();
     try {
-        const res = await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+        const res = await fetch(`http://localhost:5000/api/notifications/${id}/read`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             const n = FlowSenseNotifications.find(x => x.id === id);
@@ -1712,10 +2499,10 @@ async function markAsRead(e, id) {
     }
 }
 
-function viewProjectContext(e, projectName) {
+function viewProjectContext(e, projectQuery) {
     if (e) e.stopPropagation();
     loadView('projects');
-    const p = FlowSenseState.projects.find(proj => proj.name === projectName);
+    const p = FlowSenseState.projects.find(proj => proj._id === projectQuery || proj.id === projectQuery || proj.name === projectQuery);
     if (p) {
         toggleNotifications();
         setTimeout(() => {
@@ -1762,7 +2549,7 @@ async function fetchLiveProfile() {
     if (!id || !role) return;
 
     try {
-        const res = await fetch(`/api/auth/profile/${id}/${role}`);
+        const res = await fetch(`http://localhost:5000/api/auth/profile/${id}/${role}`);
         const data = await res.json();
         if (data.success) {
             const user = data.data;
@@ -1846,7 +2633,7 @@ async function fetchSkillSuggestions(role) {
     if (!container || !group) return;
 
     try {
-        const res = await fetch(`/api/auth/skills/${role}`);
+        const res = await fetch(`http://localhost:5000/api/auth/skills/${role}`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             group.style.display = 'block';
@@ -1970,7 +2757,7 @@ async function handleProfileUpdate(e) {
 
     try {
         console.log('TRANSMITTING IDENTITY SYNC:', { id, role, name, email, role_field: role_val, skills: skills_val });
-        const res = await fetch('/api/auth/profile', {
+        const res = await fetch('http://localhost:5000/api/auth/profile', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -2010,7 +2797,7 @@ async function handleAvatarUpload(e) {
             const base64 = event.target.result;
             
             try {
-                const res = await fetch('/api/auth/profile', {
+                const res = await fetch('http://localhost:5000/api/auth/profile', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, role, profile_image: base64 })

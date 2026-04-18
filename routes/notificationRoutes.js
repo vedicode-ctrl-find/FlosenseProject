@@ -9,15 +9,16 @@ router.get('/company/:companyId', async (req, res) => {
         const { userId, role } = req.query;
         let query = { company_id: req.params.companyId };
 
-        // Role-based filtering: Employees see ONLY their own targeted notifications
-        if (role === 'employee' && userId && userId !== 'null' && userId !== 'undefined') {
-            const isValidId = mongoose.Types.ObjectId.isValid(userId);
-            
+        if (role === 'company') {
+            query.recipient_id = null;
+            query.targetRole = 'company';
+        } else {
+            // For employee or lead, they only see notifications meant for their specific ID
+            const isValidId = userId && userId !== 'null' && userId !== 'undefined' ? mongoose.Types.ObjectId.isValid(userId) : false;
             if (isValidId) {
                 query.recipient_id = userId;
             } else {
-                // If invalid ID, they see NOTHING (strict personal isolation)
-                query.recipient_id = new mongoose.Types.ObjectId(); 
+                query.recipient_id = new mongoose.Types.ObjectId(); // invalid query
             }
         }
 
@@ -34,7 +35,11 @@ router.get('/company/:companyId', async (req, res) => {
 // @route   POST /api/notifications
 router.post('/', async (req, res) => {
     try {
-        const notification = await Notification.create(req.body);
+        const payload = { ...req.body };
+        if (!payload.targetRole) {
+            payload.targetRole = payload.recipient_id ? 'employee' : 'company';
+        }
+        const notification = await Notification.create(payload);
         res.json({ success: true, data: notification });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

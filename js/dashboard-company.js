@@ -28,7 +28,7 @@ async function fetchLiveEmployees() {
     const token = localStorage.getItem('token');
     if (!token) return [];
     try {
-        const res  = await fetch('/api/team-members', {
+        const res  = await fetch('http://localhost:5000/api/team-members', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -49,7 +49,7 @@ async function fetchLiveProjects() {
     const companyId = getCompanyId();
     if (!companyId) return [];
     try {
-        const res  = await fetch(`/api/projects/company/${companyId}`);
+        const res  = await fetch(`http://localhost:5000/api/projects/company/${companyId}`);
         const data = await res.json();
         if (data.success) {
             liveData.projects = data.data;
@@ -70,7 +70,7 @@ async function fetchLiveNotifications() {
     const role      = localStorage.getItem('userRole');
     if (!companyId) return;
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
+        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
         const data = await res.json();
         if (data.success) {
             // Map DB fields to UI fields if they differ
@@ -493,7 +493,7 @@ async function renderProjectCreationStep() {
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing System...';
 
         try {
-            const res = await fetch('/api/projects', {
+            const res = await fetch('http://localhost:5000/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, deadline, description: desc, team_lead: lead, priority: selectedPriority, company_id: companyId })
@@ -648,7 +648,7 @@ async function renderTeamSetupStep() {
         finishBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
 
         try {
-            await fetch(`/api/projects/${currentCreatingProject._id}/team`, {
+            await fetch(`http://localhost:5000/api/projects/${currentCreatingProject._id}/team`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ team_members: selectedIds })
@@ -1211,7 +1211,7 @@ async function deleteProject(event, pid) {
     showToast('Executing termination protocols...', 'info');
 
     try {
-        const res = await fetch(`/api/projects/${pid}/delete`, { 
+        const res = await fetch(`http://localhost:5000/api/projects/${pid}/delete`, { 
             method: 'POST' 
         });
         const data = await res.json();
@@ -1542,7 +1542,7 @@ async function addNotification(type, title, desc, longDesc, category, projectLin
     if (!companyId) return;
 
     try {
-        const res = await fetch('/api/notifications', {
+        const res = await fetch('http://localhost:5000/api/notifications', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1635,7 +1635,7 @@ function renderNotificationsList() {
                         
                         ${isExpanded ? `
                             <div class="notif-expanded-area">
-                                <p class="notif-long-text">${n.longDesc}</p>
+                                ${n.longDesc ? `<p class="notif-long-text">${n.longDesc}</p>` : ''}
                                 <div class="notif-action-cluster">
                                     ${!n.read ? `<button class="btn-notif-action primary" onclick="markAsRead(event, '${n.id}')">Acknowledge</button>` : ''}
                                     ${n.projectLink ? `<button class="btn-notif-action secondary" onclick="viewProjectContext(event, '${n.projectLink}')">Review Project</button>` : ''}
@@ -1678,7 +1678,7 @@ async function markAllRead(e) {
     if (!companyId) return;
 
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
+        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             FlowSenseNotifications.forEach(n => n.read = true);
@@ -1693,7 +1693,7 @@ async function markAllRead(e) {
 async function markAsRead(e, id) {
     if (e) e.stopPropagation();
     try {
-        const res = await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+        const res = await fetch(`http://localhost:5000/api/notifications/${id}/read`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             const n = FlowSenseNotifications.find(x => x.id === id);
@@ -1707,10 +1707,10 @@ async function markAsRead(e, id) {
     }
 }
 
-function viewProjectContext(e, projectName) {
+function viewProjectContext(e, projectQuery) {
     if (e) e.stopPropagation();
     loadView('projects');
-    const p = FlowSenseState.projects.find(proj => proj.name === projectName);
+    const p = FlowSenseState.projects.find(proj => proj._id === projectQuery || proj.id === projectQuery || proj.name === projectQuery);
     if (p) {
         toggleNotifications();
         setTimeout(() => {
@@ -1757,7 +1757,7 @@ async function fetchLiveProfile() {
     if (!id || !role) return;
 
     try {
-        const res = await fetch(`/api/auth/profile/${id}/${role}`);
+        const res = await fetch(`http://localhost:5000/api/auth/profile/${id}/${role}`);
         const data = await res.json();
         if (data.success) {
             const user = data.data;
@@ -1841,7 +1841,7 @@ async function fetchSkillSuggestions(role) {
     if (!container || !group) return;
 
     try {
-        const res = await fetch(`/api/auth/skills/${role}`);
+        const res = await fetch(`http://localhost:5000/api/auth/skills/${role}`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             group.style.display = 'block';
@@ -1965,7 +1965,7 @@ async function handleProfileUpdate(e) {
 
     try {
         console.log('TRANSMITTING IDENTITY SYNC:', { id, role, name, email, role_field: role_val, skills: skills_val });
-        const res = await fetch('/api/auth/profile', {
+        const res = await fetch('http://localhost:5000/api/auth/profile', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -2005,7 +2005,7 @@ async function handleAvatarUpload(e) {
             const base64 = event.target.result;
             
             try {
-                const res = await fetch('/api/auth/profile', {
+                const res = await fetch('http://localhost:5000/api/auth/profile', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, role, profile_image: base64 })

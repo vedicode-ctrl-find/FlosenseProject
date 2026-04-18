@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const Employee = require('../models/Employee');
+const Notification = require('../models/Notification');
 const protect = require('../middleware/auth');
 
 // router.use(protect);
@@ -16,6 +17,22 @@ router.post('/', async (req, res) => {
             name, description, deadline, priority,
             team_lead, company_id, required_skills
         });
+
+        if (team_lead) {
+            await Notification.create({
+                company_id,
+                recipient_id: team_lead,
+                type: 'success',
+                title: 'New Project Assigned',
+                description: `You have been designated as the Team Lead for the new project: ${project.name}.`,
+                longDescription: `As the newly assigned Team Lead for "${project.name}", you possess full authorization to manage milestones, allocate resources, and oversee stream operations. Please review the project constraints and initialize team tasks.`,
+                category: 'assignment',
+                projectLink: project._id.toString(),
+                action: 'Manage Team',
+                targetRole: 'lead'
+            });
+        }
+
         res.status(201).json({ success: true, data: project });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -23,7 +40,20 @@ router.post('/', async (req, res) => {
 });
 
 // @route   GET /api/projects/company/:company_id
-// @desc    Get all projects for a company
+// @route   GET /api/projects/lead/:leadId
+// @desc    Get all projects where the given employee is the team lead
+router.get('/lead/:leadId', async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.leadId)) return res.status(400).json({ success: false, error: 'Invalid Lead ID' });
+        const projects = await Project.find({ team_lead: req.params.leadId })
+            .select('name status deadline team_members team_lead priority');
+        res.json({ success: true, data: projects });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+// @route   GET /api/projects/company/:companyId
 router.get('/company/:company_id', async (req, res) => {
     try {
         const projects = await Project.find({ company_id: req.params.company_id })
@@ -77,13 +107,38 @@ router.get('/:id/members', async (req, res) => {
 router.put('/:id/team', async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, error: 'Invalid ID' });
+        
+        const oldProject = await Project.findById(req.params.id);
+        if (!oldProject) return res.status(404).json({ success: false, error: 'Project not found' });
+        
         const { team_members } = req.body;
+        const oldMembersStr = oldProject.team_members.map(m => m.toString());
+        const newMembersIds = team_members || [];
+        const addedMembers = newMembersIds.filter(id => !oldMembersStr.includes(id.toString()));
+
         const project = await Project.findByIdAndUpdate(
             req.params.id,
             { team_members },
             { new: true, runValidators: true }
         ).populate('team_members', 'name role workload_percentage skills');
-        if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
+        
+        if (addedMembers.length > 0) {
+            await Promise.all(addedMembers.map(memberId => 
+                Notification.create({
+                    company_id: project.company_id,
+                    recipient_id: memberId,
+                    type: 'info',
+                    title: 'Added to Project',
+                    description: `You have been added to the project: ${project.name}.`,
+                    longDescription: `You have been successfully integrated into the "${project.name}" operational stream. Please review the project dashboard to familiarize yourself with incoming assignments and priority milestones.`,
+                    category: 'assignment',
+                    projectLink: project._id.toString(),
+                    action: 'View Tasks',
+                    targetRole: 'employee'
+                })
+            ));
+        }
+
         res.json({ success: true, data: project });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
