@@ -25,9 +25,9 @@
                 <i class="fas fa-project-diagram"></i>
                 <span>Projects</span>
             </a>
-            <a href="assign-task.html" class="nav-item" data-view="tasks">
+            <a href="#" class="nav-item" data-view="tasks" onclick="loadView('tasks')">
                 <i class="fas fa-tasks"></i>
-                <span>Optimizer</span>
+                <span>My Tasks</span>
             </a>
             <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
                 <i class="fas fa-chart-line"></i>
@@ -62,14 +62,30 @@
                 <i class="fas fa-search"></i>
                 <input type="text" placeholder="Search tasks, members, or projects...">
             </div>
+
+            <!-- Global Project Context Selector -->
+            <div class="global-context-wrapper" id="global-context-wrapper" style="display:none;">
+                <div class="global-context-trigger" onclick="toggleGlobalContext(event)">
+                    <i class="fas fa-folder-open ctx-icon"></i>
+                    <div class="ctx-info">
+                        <span class="ctx-label">Active Environment</span>
+                        <span class="ctx-value" id="global-context-name">Loading...</span>
+                    </div>
+                    <i class="fas fa-chevron-down ctx-arrow"></i>
+                </div>
+                <div class="global-context-dropdown" id="global-context-dropdown">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
             <div class="top-actions">
                 <div class="notification-bell" onclick="toggleNotifications(event)">
                     <i class="fas fa-bell"></i>
                     <span class="notification-badge" id="suggestion-count" style="display:none;">0</span>
                 </div>
-                <button class="btn btn-primary btn-sm" id="btn-quick-action" onclick="openProjectModal()">
-                    <i class="fas fa-plus"></i>
-                    <span>New Project</span>
+                <button class="btn btn-primary btn-sm" id="btn-quick-action" onclick="loadView('tasks')" title="Go to My Tasks">
+                    <i class="fas fa-tasks"></i>
+                    <span>My Tasks</span>
                 </button>
             </div>
         </header>
@@ -243,6 +259,6 @@
         </div>
     </aside>
 
-    <script src="js/dashboard-employee.js?v=16"></script>
+    <script src="js/dashboard-employee.js?v=18"></script>
 </body>
 </html>

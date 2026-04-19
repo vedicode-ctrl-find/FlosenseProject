@@ -7,7 +7,8 @@ let FlowSenseState = {
     tasks:     [],   // Live tasks (fetched per view)
     currentView:  'overview',
     searchQuery:  '',
-    userProfile: {}  // Cached for settings population
+    userProfile: {}, // Cached for settings population
+    globalSelectedProjectId: localStorage.getItem('savedProjectId') || 'all' 
 };
 
 // ── Live DB Data Store (populated from API) ──
@@ -141,7 +142,132 @@ function checkAuth() {
     renderCurrentView();
     fetchLiveNotifications();
     fetchLiveProfile();
+
+    // Init Global Context
+    initGlobalContext();
 }
+
+// ── Global Context Selector (Project Switching) ──
+async function initGlobalContext() {
+    const wrapper = document.getElementById('global-context-wrapper');
+    if (!wrapper) return;
+    
+    // Wait for projects array
+    if (!liveData.loaded) await fetchLiveProjects();
+    
+    // In Dashboard (Team Lead/Admin), they can access all projects they lead or are a part of, 
+    // or maybe the whole company depending on role. Since dashboard.js is for Lead/Admin, 
+    // we'll filter their accessible projects.
+    const userId = localStorage.getItem('userId');
+    const userRole = localStorage.getItem('userRole'); // 'admin' etc.
+    let accessibleProjects = liveData.projects;
+    
+    if (userRole !== 'Company') {
+        // If not company admin, only show projects they lead or are members of
+        accessibleProjects = liveData.projects.filter(p => {
+            const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+            const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+            const isLead = leadId && String(leadId) === String(userId);
+            const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(userId));
+            return isLead || isMember;
+        });
+    }
+
+    if (accessibleProjects.length === 0) {
+        document.getElementById('global-context-name').textContent = "No Projects Assigned";
+        wrapper.style.display = 'block';
+        return; // No projects
+    }
+
+    // Default to the saved one, or the first one if the saved one isn't accessible
+    let activeId = FlowSenseState.globalSelectedProjectId;
+    if (activeId !== 'all' && !accessibleProjects.find(p => String(p._id) === activeId)) {
+        activeId = 'all'; // Fallback
+    }
+
+    // If 'all' is not supported, just pick the first project
+    if (activeId === 'all') {
+        activeId = String(accessibleProjects[0]._id);
+        FlowSenseState.globalSelectedProjectId = activeId;
+        localStorage.setItem('savedProjectId', activeId);
+    }
+
+    wrapper.style.display = 'block';
+    renderGlobalSelector(accessibleProjects, activeId);
+    renderCurrentView(); // Force re-render with the new context
+}
+
+function renderGlobalSelector(projects, activeId) {
+    const dropdown = document.getElementById('global-context-dropdown');
+    const nameLabel = document.getElementById('global-context-name');
+    
+    const activeProject = projects.find(p => String(p._id) === activeId);
+    if (activeProject) {
+        nameLabel.textContent = activeProject.name;
+    }
+
+    let html = '';
+    projects.forEach(p => {
+        const pid = String(p._id);
+        const isActive = pid === activeId;
+        html += `
+            <div class="gc-item ${isActive ? 'active' : ''}" onclick="selectGlobalContext('${pid}')">
+                <div class="gc-item-icon"><i class="fas fa-layer-group"></i></div>
+                <div class="gc-item-info">
+                    <div class="gc-item-name">${p.name}</div>
+                    <div class="gc-item-status">${p.status || 'Active'}</div>
+                </div>
+                <i class="fas fa-check gc-item-check"></i>
+            </div>
+        `;
+    });
+    dropdown.innerHTML = html;
+}
+
+window.toggleGlobalContext = function(e) {
+    e.stopPropagation();
+    const trigger = document.querySelector('.global-context-trigger');
+    const dropdown = document.getElementById('global-context-dropdown');
+    if (!trigger || !dropdown) return;
+    
+    const isOpen = dropdown.classList.contains('show');
+    
+    // Close notifications if open
+    const notifSheet = document.getElementById('notifications-sheet');
+    if (notifSheet && notifSheet.classList.contains('show')) toggleNotifications();
+    
+    if (isOpen) {
+        dropdown.classList.remove('show');
+        trigger.classList.remove('open');
+    } else {
+        dropdown.classList.add('show');
+        trigger.classList.add('open');
+    }
+};
+
+window.selectGlobalContext = function(projectId) {
+    FlowSenseState.globalSelectedProjectId = projectId;
+    localStorage.setItem('savedProjectId', projectId);
+    
+    // Re-initialize selector to update active class and label
+    initGlobalContext();
+    
+    // Close dropdown
+    document.getElementById('global-context-dropdown').classList.remove('show');
+    document.querySelector('.global-context-trigger').classList.remove('open');
+    
+    // Force re-render of current view
+    renderCurrentView();
+};
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('global-context-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('global-context-dropdown').classList.remove('show');
+        document.querySelector('.global-context-trigger').classList.remove('open');
+    }
+});
 
 function renderCompanySidebar() {
     const nav = document.getElementById('sidebar-nav');
@@ -204,6 +330,31 @@ async function openTeamSetupModal(projectId) {
     renderTeamSetupStep();
 }
 
+// ── Helper: Get filter scope ──
+function getContextFilteredTasks() {
+    if (!FlowSenseState.globalSelectedProjectId || FlowSenseState.globalSelectedProjectId === 'all') {
+        return FlowSenseState.tasks;
+    }
+    return FlowSenseState.tasks.filter(t => String(t.project_id && (t.project_id._id || t.project_id)) === FlowSenseState.globalSelectedProjectId);
+}
+
+function getContextFilteredTeam() {
+    if (!FlowSenseState.globalSelectedProjectId || FlowSenseState.globalSelectedProjectId === 'all') {
+        return FlowSenseState.employees;
+    }
+    // Only return team members who are part of the active project
+    const activeProject = liveData.projects.find(p => String(p._id) === FlowSenseState.globalSelectedProjectId);
+    if (!activeProject) return [];
+    
+    const assignedIds = (activeProject.team_members || []).map(m => String(m._id || m.id || m));
+    const leadId = activeProject.team_lead ? String(activeProject.team_lead._id || activeProject.team_lead.id || activeProject.team_lead) : null;
+    
+    return FlowSenseState.employees.filter(e => {
+        const empId = String(e._id);
+        return assignedIds.includes(empId) || empId === leadId;
+    });
+}
+
 function renderCurrentView() {
     const container = document.getElementById('view-container');
     const view = FlowSenseState.currentView;
@@ -233,9 +384,11 @@ function recalculateState() {
     // Reset workloads
     FlowSenseState.employees.forEach(emp => emp.workload = 0);
     
+    const scopedTasks = getContextFilteredTasks();
+
     // Sum hours (Mock formula: workload % = total hours * 2)
-    FlowSenseState.tasks.forEach(task => {
-        const emp = FlowSenseState.employees.find(e => e.id === task.assigneeId);
+    scopedTasks.forEach(task => {
+        const emp = FlowSenseState.employees.find(e => e.id === task.assigneeId || String(e._id) === String(task.assigned_to && (task.assigned_to._id || task.assigned_to)));
         if (emp) emp.workload += task.hours * 2.5; 
     });
 
@@ -744,13 +897,16 @@ async function renderLeadOverview(container) {
     // Fetch real data in parallel
     const [employees, projects] = await Promise.all([fetchLiveEmployees(), fetchLiveProjects()]);
 
-    const overloaded     = employees.filter(e => (e.workload_percentage || 0) > 100);
-    const empCount       = employees.length;
-    const projCount      = projects.length;
+    const scopedEmployees = getContextFilteredTeam();
+    const scopedTasks     = getContextFilteredTasks();
+
+    const overloaded     = scopedEmployees.filter(e => (e.workload_percentage || 0) > 100);
+    const empCount       = scopedEmployees.length;
+    const projCount      = FlowSenseState.globalSelectedProjectId === 'all' ? projects.length : 1;
 
     // Build workload distribution from live employees
-    const workloadItems = employees.length > 0
-        ? employees.map(e => {
+    const workloadItems = scopedEmployees.length > 0
+        ? scopedEmployees.map(e => {
             const wl     = e.workload_percentage || 0;
             const status = wl > 100 ? 'overloaded' : wl >= 80 ? 'balanced' : 'underutilized';
             return renderWorkloadItem(e.name, wl, status);
@@ -758,8 +914,8 @@ async function renderLeadOverview(container) {
         : '<p style="font-size:13px;color:var(--gray-600);text-align:center;padding:20px 0;">No employees registered yet.</p>';
 
     // Smart suggestions from live data
-    const overloadedEmp    = employees.find(e => (e.workload_percentage || 0) > 100);
-    const underutilizedEmp = employees.find(e => (e.workload_percentage || 0) < 60);
+    const overloadedEmp    = scopedEmployees.find(e => (e.workload_percentage || 0) > 100);
+    const underutilizedEmp = scopedEmployees.find(e => (e.workload_percentage || 0) < 60);
     const suggestionHTML = (overloadedEmp && underutilizedEmp)
         ? `<div class="suggestion-card">
                 <h4><i class="fas fa-bolt"></i> Rebalance Alert</h4>
@@ -792,7 +948,7 @@ async function renderLeadOverview(container) {
             <div class="stat-card">
                 <div class="stat-icon green"><i class="fas fa-tasks"></i></div>
                 <div>
-                    <div class="stat-value">${FlowSenseState.tasks.length}</div>
+                    <div class="stat-value">${scopedTasks.length}</div>
                     <div class="stat-label">Live Tasks</div>
                 </div>
             </div>
@@ -970,7 +1126,18 @@ async function renderTeamView(container) {
     // Fetch real employees
     const employees = await fetchLiveEmployees();
     liveData.employees = employees;
-    const filtered = getFilteredData('employees');
+    // Intersect context scope with search query Filter
+    const scopedEmployees = getContextFilteredTeam();
+    const q = FlowSenseState.searchQuery;
+    let filtered = scopedEmployees;
+    if (q) {
+        filtered = scopedEmployees.filter(e => {
+            const name   = (e.name   || '').toLowerCase();
+            const role   = (e.role   || '').toLowerCase();
+            const skills = (e.skills || []).map(s => s.toLowerCase());
+            return name.includes(q) || role.includes(q) || skills.some(s => s.includes(q));
+        });
+    }
 
     const companyName = localStorage.getItem('userName') || 'Your Company';
 
@@ -1006,6 +1173,9 @@ async function renderTeamView(container) {
 }
 
 function renderTasksView(container) {
+    const scopedTasks = getContextFilteredTasks();
+    const scopedTeam = getContextFilteredTeam();
+    
     container.innerHTML = `
         <div class="welcome-header">
             <h2>Task Optimizer</h2>
@@ -1027,13 +1197,16 @@ function renderTasksView(container) {
                     <div class="form-group">
                         <label>Project</label>
                         <select id="t-project" class="styled-input" style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;">
-                            ${FlowSenseState.projects.map(p => `<option>${p.name}</option>`).join('')}
+                            ${FlowSenseState.projects.map(p => {
+                                const selected = (String(p._id) === FlowSenseState.globalSelectedProjectId) ? 'selected' : '';
+                                return `<option value="${p._id}" ${selected}>${p.name}</option>`;
+                            }).join('')}
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Assignee</label>
                         <select id="t-assignee" class="styled-input" style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;" onchange="checkTaskOverload(this.value)">
-                            ${FlowSenseState.employees.map(e => `<option value="${e.id}">${e.name} (${Math.round(e.workload)}%)</option>`).join('')}
+                            ${scopedTeam.map(e => `<option value="${e._id || e.id}">${e.name} (${Math.round(e.workload_percentage || e.workload || 0)}%)</option>`).join('')}
                         </select>
                     </div>
                     <div id="smart-alert-container"></div>
@@ -1046,10 +1219,12 @@ function renderTasksView(container) {
                     <h3 style="margin:0;">Pending Tasks</h3>
                 </div>
                 <div style="padding:10px 20px;">
-                    ${FlowSenseState.tasks.map(t => {
-                        const emp = FlowSenseState.employees.find(e => e.id === t.assigneeId);
-                        return renderTaskItem(t.title, t.projectName, emp ? emp.name : 'Unknown', t.deadline, t.status);
+                    ${scopedTasks.map(t => {
+                        const emp = liveData.employees.find(e => String(e._id) === String(t.assigned_to && (t.assigned_to._id || t.assigned_to)) || e.id === t.assigneeId);
+                        const proj = liveData.projects.find(p => String(p._id) === String(t.project_id && (t.project_id._id || t.project_id)) || p.name === t.projectName);
+                        return renderTaskItem(t.name || t.title, proj ? proj.name : 'Unknown', emp ? emp.name : 'Unknown', 'Deadline Pending', t.status);
                     }).join('')}
+                    ${scopedTasks.length === 0 ? '<p style="padding: 20px; text-align: center; color: var(--gray-400);">No tasks for this context.</p>' : ''}
                 </div>
             </div>
         </div>

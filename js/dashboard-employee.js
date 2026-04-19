@@ -6,7 +6,8 @@ let FlowSenseState = {
     projects:  [],   // DEPRECATED — use liveData.projects
     tasks:     [],   // Live tasks (fetched per view)
     currentView:  'overview',
-    currentSelectedProjectForTasks: 'all', // For Kanban filtering
+    currentSelectedProjectForTasks: 'all', // DEPRECATED in favor of globalSelectedProjectId
+    globalSelectedProjectId: localStorage.getItem('savedProjectId') || 'all',
     searchQuery:  '',
     userProfile: {}  // Cached for settings population
 };
@@ -29,7 +30,7 @@ async function fetchLiveEmployees() {
     const token = localStorage.getItem('token');
     if (!token) return [];
     try {
-        const res  = await fetch('http://localhost:5000/api/team-members', {
+        const res  = await fetch('/api/team-members', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -50,24 +51,17 @@ async function fetchLiveProjects() {
     const companyId = getCompanyId();
     if (!companyId) return [];
     try {
-        const res  = await fetch(`http://localhost:5000/api/projects/company/${companyId}`);
-        const text = await res.text();
-        try {
-            const data = JSON.parse(text);
-            if (data.success) {
-                liveData.projects = data.data;
-                FlowSenseState.projects = data.data; // Sync
-                liveData.loaded = true;
-                return data.data;
-            } else {
-                window.DiagnosticFetchDetails = "Success was false: " + text;
-            }
-        } catch (parseFail) {
-            window.DiagnosticFetchDetails = "JSON Parse Failed. Status: " + res.status + " | Response: " + text;
+        const res  = await fetch(`/api/projects/company/${companyId}`);
+        const data = await res.json();
+        if (data.success) {
+            liveData.projects = data.data;
+            FlowSenseState.projects = data.data; // Sync
+            liveData.loaded = true;
+            return data.data;
         }
+        console.error('Project fetch failed:', data.error);
     } catch (err) {
         console.error('Failed to fetch live projects:', err);
-        window.DiagnosticFetchDetails = "Network Fetch Exception: " + err.message;
     }
     return [];
 }
@@ -79,7 +73,7 @@ async function fetchLiveNotifications() {
     const role      = localStorage.getItem('userRole');
     if (!companyId) return;
     try {
-        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
+        const res = await fetch(`/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
         const data = await res.json();
         if (data.success) {
             // Map DB fields to UI fields if they differ
@@ -106,7 +100,7 @@ async function fetchLiveTasks() {
     const companyId = getCompanyId();
     if (!companyId) return;
     try {
-        const res = await fetch(`http://localhost:5000/api/tasks/company/${companyId}`);
+        const res = await fetch(`/api/tasks/company/${companyId}`);
         const data = await res.json();
         if (data.success) {
             FlowSenseState.tasks = data.data;
@@ -170,9 +164,140 @@ function checkAuth() {
         fetchLiveEmployees().catch(e => console.warn('Employee stream offline')),
         fetchLiveTasks().catch(e => console.warn('Task stream offline'))
     ]).then(() => {
-        renderCurrentView();
+        initGlobalContext();
     });
 }
+
+// ── Global Context Selector (Project Switching) ──
+async function initGlobalContext() {
+    const wrapper = document.getElementById('global-context-wrapper');
+    if (!wrapper) return;
+    
+    // Wait for projects array (cache guard — avoids redundant DB call on every re-render)
+    if (!liveData.loaded) await fetchLiveProjects();
+
+    const userId = localStorage.getItem('userId');
+    const userRole = localStorage.getItem('userRole');
+    let accessibleProjects = liveData.projects;
+    
+    if (userRole !== 'Company') {
+        // If not company admin, only show projects they lead or are members of
+        accessibleProjects = liveData.projects.filter(p => {
+            const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+            const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+            const isLead = leadId && String(leadId) === String(userId);
+            const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(userId));
+            return isLead || isMember;
+        });
+    }
+
+    if (accessibleProjects.length === 0) {
+        document.getElementById('global-context-name').textContent = "No Projects Assigned";
+        wrapper.style.display = 'block';
+        renderCurrentView();
+        return; // No projects
+    }
+
+    // Default to the saved project ID, or 'all' if nothing saved or invalid
+    let activeId = FlowSenseState.globalSelectedProjectId;
+    if (!activeId) {
+        activeId = localStorage.getItem('savedProjectId') || 'all';
+    }
+    // If saved ID is not in the accessible list, reset to 'all'
+    if (activeId !== 'all' && !accessibleProjects.find(p => String(p._id) === activeId)) {
+        activeId = 'all';
+    }
+    FlowSenseState.globalSelectedProjectId = activeId;
+    localStorage.setItem('savedProjectId', activeId);
+
+    wrapper.style.display = 'block';
+    renderGlobalSelector(accessibleProjects, activeId);
+    renderCurrentView(); // Force re-render with the new context
+}
+
+function renderGlobalSelector(projects, activeId) {
+    const dropdown = document.getElementById('global-context-dropdown');
+    const nameLabel = document.getElementById('global-context-name');
+    
+    const activeProject = projects.find(p => String(p._id) === activeId);
+    if (activeProject) {
+        nameLabel.textContent = activeProject.name;
+    } else {
+        nameLabel.textContent = 'All Projects'; // 'all' context
+    }
+
+    // Always include an 'All Projects' aggregate option
+    let html = `
+        <div class="gc-item ${activeId === 'all' ? 'active' : ''}" onclick="selectGlobalContext('all')">
+            <div class="gc-item-icon"><i class="fas fa-layer-group"></i></div>
+            <div class="gc-item-info">
+                <div class="gc-item-name">All Projects</div>
+                <div class="gc-item-status">${projects.length} stream${projects.length !== 1 ? 's' : ''}</div>
+            </div>
+            <i class="fas fa-check gc-item-check"></i>
+        </div>
+    `;
+    projects.forEach(p => {
+        const pid = String(p._id);
+        const isActive = pid === activeId;
+        html += `
+            <div class="gc-item ${isActive ? 'active' : ''}" onclick="selectGlobalContext('${pid}')">
+                <div class="gc-item-icon"><i class="fas fa-circle" style="font-size:8px;"></i></div>
+                <div class="gc-item-info">
+                    <div class="gc-item-name">${p.name}</div>
+                    <div class="gc-item-status">${p.status || 'Active'}</div>
+                </div>
+                <i class="fas fa-check gc-item-check"></i>
+            </div>
+        `;
+    });
+    dropdown.innerHTML = html;
+}
+
+window.toggleGlobalContext = function(e) {
+    e.stopPropagation();
+    const trigger = document.querySelector('.global-context-trigger');
+    const dropdown = document.getElementById('global-context-dropdown');
+    if (!trigger || !dropdown) return;
+    
+    const isOpen = dropdown.classList.contains('show');
+    
+    // Close notifications if open
+    const notifSheet = document.getElementById('notifications-sheet');
+    if (notifSheet && notifSheet.classList.contains('show')) toggleNotifications();
+    
+    if (isOpen) {
+        dropdown.classList.remove('show');
+        trigger.classList.remove('open');
+    } else {
+        dropdown.classList.add('show');
+        trigger.classList.add('open');
+    }
+};
+
+window.selectGlobalContext = function(projectId) {
+    FlowSenseState.globalSelectedProjectId = projectId;
+    localStorage.setItem('savedProjectId', projectId);
+    
+    // Re-initialize selector to update active class and label
+    initGlobalContext();
+    
+    // Close dropdown
+    document.getElementById('global-context-dropdown').classList.remove('show');
+    document.querySelector('.global-context-trigger').classList.remove('open');
+
+    // Force repaint of current view with the new project context
+    renderCurrentView();
+};
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('global-context-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('global-context-dropdown').classList.remove('show');
+        document.querySelector('.global-context-trigger').classList.remove('open');
+    }
+});
 
 function renderCompanySidebar() {
     const nav = document.getElementById('sidebar-nav');
@@ -226,6 +351,42 @@ function renderEmployeeSidebar() {
     `;
 }
 
+// ── Helper: Get filter scope ──
+function getContextFilteredTasks() {
+    if (!FlowSenseState.globalSelectedProjectId || FlowSenseState.globalSelectedProjectId === 'all') {
+        return FlowSenseState.tasks;
+    }
+    // Only compare by DB ID — never by name string (avoids false positives & cross-project leaks)
+    return FlowSenseState.tasks.filter(t => {
+        const pid = t.project_id && (t.project_id._id || t.project_id);
+        return String(pid) === FlowSenseState.globalSelectedProjectId;
+    });
+}
+
+function getContextFilteredProjects() {
+    if (!FlowSenseState.globalSelectedProjectId || FlowSenseState.globalSelectedProjectId === 'all') {
+        return FlowSenseState.projects;
+    }
+    return FlowSenseState.projects.filter(p => String(p._id) === FlowSenseState.globalSelectedProjectId);
+}
+
+function getContextFilteredTeam() {
+    if (!FlowSenseState.globalSelectedProjectId || FlowSenseState.globalSelectedProjectId === 'all') {
+        return FlowSenseState.employees;
+    }
+    // Only return team members who are part of the active project
+    const activeProject = liveData.projects.find(p => String(p._id) === FlowSenseState.globalSelectedProjectId);
+    if (!activeProject) return [];
+    
+    const assignedIds = (activeProject.team_members || []).map(m => String(m._id || m.id || m));
+    const leadId = activeProject.team_lead ? String(activeProject.team_lead._id || activeProject.team_lead.id || activeProject.team_lead) : null;
+    
+    return FlowSenseState.employees.filter(e => {
+        const empId = String(e._id);
+        return assignedIds.includes(empId) || empId === leadId;
+    });
+}
+
 // ── View Management ──
 function loadView(view) {
     FlowSenseState.currentView = view;
@@ -243,7 +404,7 @@ async function openAssignTaskModal(projectId) {
     
     // Fetch current tasks for this project
     try {
-        const res = await fetch(`http://localhost:5000/api/tasks/project/${projectId}`);
+        const res = await fetch(`/api/tasks/project/${projectId}`);
         const data = await res.json();
         currentProjectTasks = data.success ? data.data : [];
     } catch (e) {
@@ -474,7 +635,7 @@ async function renderAssignTaskModalContent(showForm = false) {
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
 
             try {
-                const res = await fetch('http://localhost:5000/api/tasks', {
+                const res = await fetch('/api/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -491,7 +652,7 @@ async function renderAssignTaskModalContent(showForm = false) {
                     showToast('Successfully deployed to employee orbit.', 'success');
                     
                     // RE-FETCH TASKS for real-time board update
-                    const tRes = await fetch(`http://localhost:5000/api/tasks/project/${currentCreatingProject._id || currentCreatingProject.id}`);
+                    const tRes = await fetch(`/api/tasks/project/${currentCreatingProject._id || currentCreatingProject.id}`);
                     const tData = await tRes.json();
                     currentProjectTasks = tData.success ? tData.data : [];
                     
@@ -825,7 +986,7 @@ async function renderProjectCreationStep() {
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing System...';
 
         try {
-            const res = await fetch('http://localhost:5000/api/projects', {
+            const res = await fetch('/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, deadline, description: desc, team_lead: lead, priority: selectedPriority, company_id: companyId })
@@ -980,7 +1141,7 @@ async function renderTeamSetupStep() {
         finishBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
 
         try {
-            await fetch(`http://localhost:5000/api/projects/${currentCreatingProject._id}/team`, {
+            await fetch(`/api/projects/${currentCreatingProject._id}/team`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ team_members: selectedIds })
@@ -1302,7 +1463,19 @@ async function renderTeamView(container) {
     // Fetch real employees
     const employees = await fetchLiveEmployees();
     liveData.employees = employees;
-    const filtered = getFilteredData('employees');
+    
+    // Intersect context scope with search query Filter
+    const scopedEmployees = getContextFilteredTeam();
+    const q = FlowSenseState.searchQuery;
+    let filtered = scopedEmployees;
+    if (q) {
+        filtered = scopedEmployees.filter(e => {
+            const name   = (e.name   || '').toLowerCase();
+            const role   = (e.role   || '').toLowerCase();
+            const skills = (e.skills || []).map(s => s.toLowerCase());
+            return name.includes(q) || role.includes(q) || skills.some(s => s.includes(q));
+        });
+    }
 
     const companyName = localStorage.getItem('userName') || 'Your Company';
 
@@ -1540,7 +1713,7 @@ async function deleteProject(event, pid) {
     showToast('Executing termination protocols...', 'info');
 
     try {
-        const res = await fetch(`http://localhost:5000/api/projects/${pid}/delete`, { 
+        const res = await fetch(`/api/projects/${pid}/delete`, { 
             method: 'POST' 
         });
         const data = await res.json();
@@ -1818,16 +1991,30 @@ document.addEventListener('DOMContentLoaded', checkAuth);
 function renderEmployeeOverview(container) {
     const name = localStorage.getItem("userName") || "Employee";
     const userId = localStorage.getItem("userId");
-    const myTasks = FlowSenseState.tasks.filter(t => {
+    
+    // Filter MY tasks from ALL fetched tasks (context filter applied)
+    const contextTasks = getContextFilteredTasks();
+    const myTasks = contextTasks.filter(t => {
         const tid = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
         return String(tid) === String(userId);
     });
-    const myWorkload = Math.round(myTasks.reduce((acc, current) => acc + (current.hours * 2.5), 0));
+    const completedCount = myTasks.filter(t => t.status === 'Completed').length;
+    const myWorkload = Math.round(myTasks.reduce((acc, curr) => acc + ((curr.hours || 0) * 2.5), 0));
+
+    // Project Participation: always show ALL projects the user is assigned to (not context-filtered)
+    const allProjects = liveData.projects.length > 0 ? liveData.projects : FlowSenseState.projects;
+    const myProjects = allProjects.filter(p => {
+        const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+        const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(userId));
+        const leadVal = p.team_lead;
+        const isLead  = leadVal && String(leadVal._id || leadVal.id || leadVal) === String(userId);
+        return isMember || isLead;
+    });
 
     container.innerHTML = `
         <div class="welcome-header">
             <h2>Dashboard</h2>
-            <p>Welcome back, ${name}. You are currently at ${myWorkload}% workload capacity.</p>
+            <p>Welcome back, <strong>${name}</strong>. You are participating in <strong>${myProjects.length}</strong> project${myProjects.length !== 1 ? 's' : ''} with <strong>${myTasks.length}</strong> active task${myTasks.length !== 1 ? 's' : ''}.</p>
         </div>
 
         <div class="stats-grid">
@@ -1839,17 +2026,24 @@ function renderEmployeeOverview(container) {
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon green"><i class="fas fa-clock"></i></div>
+                <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
                 <div>
-                    <div class="stat-value">${myWorkload}%</div>
-                    <div class="stat-label">Current Workload</div>
+                    <div class="stat-value">${completedCount}</div>
+                    <div class="stat-label">Completed</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon blue"><i class="fas fa-brain"></i></div>
+                <div class="stat-icon blue"><i class="fas fa-project-diagram"></i></div>
                 <div>
-                    <div class="stat-value">94</div>
-                    <div class="stat-label">Efficiency Score</div>
+                    <div class="stat-value">${myProjects.length}</div>
+                    <div class="stat-label">Active Projects</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon amber"><i class="fas fa-tachometer-alt"></i></div>
+                <div>
+                    <div class="stat-value">${Math.min(myWorkload, 999)}%</div>
+                    <div class="stat-label">Workload</div>
                 </div>
             </div>
         </div>
@@ -1857,10 +2051,15 @@ function renderEmployeeOverview(container) {
         <div class="dashboard-grid">
             <div class="card">
                 <div class="card-header">
-                    <h3>Upcoming Deadlines</h3>
+                    <h3>Upcoming Tasks</h3>
                 </div>
                 <div>
-                    ${myTasks.length > 0 ? myTasks.map(t => renderTaskItem(t.name, t.project_id?.name || 'Project', name, new Date(t.deadline).toLocaleDateString(), t.status)).join("") : "<p>No pending tasks.</p>"}
+                    ${myTasks.length > 0
+                        ? myTasks.slice(0, 8).map(t => {
+                            const projName = (t.project_id && (t.project_id.name || liveData.projects.find(p => String(p._id) === String(t.project_id._id || t.project_id))?.name)) || 'Project';
+                            return renderTaskItem(t.name || t.title, projName, name, t.deadline ? new Date(t.deadline).toLocaleDateString() : 'No deadline', t.status);
+                          }).join("")
+                        : "<p style='padding:20px;color:var(--gray-500);text-align:center;'>No tasks in this context. Switch projects using the context selector above.</p>"}
                 </div>
             </div>
             <div class="card">
@@ -1868,15 +2067,23 @@ function renderEmployeeOverview(container) {
                     <h3>Project Participation</h3>
                 </div>
                 <div class="workload-list">
-                    ${FlowSenseState.projects.filter(p => myTasks.some(t => t.project_id?._id === p._id)).map(p => `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f8fafc;">
-                            <div>
-                                <p style="font-weight:600; font-size:14px;">${p.name}</p>
-                                <p style="font-size:12px; color:var(--gray-600);">${p.lead || 'Lead'} (Lead)</p>
-                            </div>
-                            <span class="badge" style="background:#f3f4f6; color:var(--gray-600); font-size:11px; padding:4px 8px; border-radius:10px;">${p.status}</span>
-                        </div>
-                    `).join("") || "<p style=\"font-size:13px; color:var(--gray-600);\">No active projects.</p>"}
+                    ${myProjects.length === 0
+                        ? "<p style='font-size:13px; color:var(--gray-600); padding:10px 0;'>You have not been assigned to any projects yet.</p>"
+                        : myProjects.map(p => {
+                            const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+                            const leadEmp = liveData.employees.find(e => String(e._id || e.id) === String(leadId));
+                            const leadName = leadEmp ? leadEmp.name : 'Lead';
+                            const isLead = leadId && String(leadId) === String(userId);
+                            return `
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f8fafc;">
+                                <div>
+                                    <p style="font-weight:600; font-size:14px;">${p.name}${isLead ? ' <span style="font-size:10px;color:#8b5cf6;background:#f3e8ff;padding:2px 6px;border-radius:8px;margin-left:4px;"><i class=\\"fas fa-crown\\"></i> Lead</span>' : ''}</p>
+                                    <p style="font-size:12px; color:var(--gray-600);">${leadName} (Project Lead)</p>
+                                </div>
+                                <span style="background:#f3f4f6; color:var(--gray-600); font-size:11px; padding:4px 10px; border-radius:20px; font-weight:600;">${p.status || 'Active'}</span>
+                            </div>`;
+                          }).join("")
+                    }
                 </div>
             </div>
         </div>
@@ -1886,8 +2093,11 @@ function renderEmployeeOverview(container) {
 function renderEmployeeProjectsView(container) {
     const userId = localStorage.getItem("userId");
     
-    // Filter projects
-    const myProjects = FlowSenseState.projects.filter(p => {
+    // IMPORTANT: "My Projects" always shows ALL projects the user belongs to.
+    // We intentionally do NOT apply the global context filter here — that would
+    // hide projects for users assigned to multiple streams simultaneously.
+    const allProjects = liveData.projects.length > 0 ? liveData.projects : FlowSenseState.projects;
+    const myProjects = allProjects.filter(p => {
         const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
         const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(userId));
         const leadVal = p.team_lead;
@@ -1895,11 +2105,11 @@ function renderEmployeeProjectsView(container) {
         return isMember || isLead;
     });
 
-    if (FlowSenseState.projects.length === 0) {
+    if (myProjects.length === 0) {
         container.innerHTML = `
         <div class="welcome-header">
             <h2>My Projects</h2>
-            <p style="color: var(--primary-violet); font-weight: 500;">No projects found in your workspace.</p>
+            <p style="color: var(--primary-violet); font-weight: 500;">You haven't been assigned to any projects yet. Contact your Company Lead to get started.</p>
         </div>`;
         return;
     }
@@ -2091,27 +2301,15 @@ function renderEmployeeProjectsView(container) {
 
 function renderEmployeeTasksView(container) {
     const userId = localStorage.getItem("userId");
-    const activeTasks = FlowSenseState.tasks.filter(t => {
+    
+    // Apply Global Filter first
+    const contextTasks = getContextFilteredTasks();
+    const activeTasks = contextTasks.filter(t => {
         const tid = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
         return String(tid) === String(userId);
     });
 
-    // Get unique projects for the filter
-    const myProjects = [];
-    const pSet = new Set();
-    activeTasks.forEach(t => {
-        const pid = t.project_id?._id || t.project_id;
-        if (pid && !pSet.has(String(pid))) {
-            pSet.add(String(pid));
-            const p = FlowSenseState.projects.find(proj => String(proj._id || proj.id) === String(pid));
-            myProjects.push(p || { _id: pid, name: t.project_id?.name || 'Assigned Project' });
-        }
-    });
-
-    const selectedPid = FlowSenseState.currentSelectedProjectForTasks;
-    const filteredTasks = selectedPid === 'all' 
-        ? activeTasks 
-        : activeTasks.filter(t => String(t.project_id?._id || t.project_id) === String(selectedPid));
+    const selectedPid = FlowSenseState.globalSelectedProjectId;
 
     const columns = [
         { id: 'Pending', label: 'To Do', color: '#64748b' },
@@ -2120,25 +2318,39 @@ function renderEmployeeTasksView(container) {
         { id: 'Completed', label: 'Completed', color: '#10b981' }
     ];
 
+    // ── Detect if this user is a Team Lead of any project ──
+    const ledProjects = FlowSenseState.projects.filter(p => {
+        const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+        return leadId && String(leadId) === String(userId);
+    });
+    const isTeamLead = ledProjects.length > 0;
+
+    // ── All projects this user is a member of (but NOT leading) ──
+    const memberOnlyProjects = FlowSenseState.projects.filter(p => {
+        const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+        const isLead = leadId && String(leadId) === String(userId);
+        if (isLead) return false; // already covered by ledProjects
+        const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+        return teamMembers.some(m => String(m._id || m.id || m) === String(userId));
+    });
+
+    // ── Combined stream projects: for Lead = led projects; for member = member-only projects ──
+    // For Team Leads we show their led projects; also include any projects they're just a member of
+    const streamProjectsForLead   = [...ledProjects, ...memberOnlyProjects];
+    const streamProjectsForMember = memberOnlyProjects;
+    const hasStreamContent = isTeamLead ? streamProjectsForLead.length > 0 : streamProjectsForMember.length > 0;
+
     container.innerHTML = `
         <div class="welcome-header" style="margin-bottom: 30px; display:flex; justify-content: space-between; align-items: flex-end;">
             <div>
                 <h2 style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Strategic Kanban</h2>
-                <p style="color: var(--gray-600); margin-top: 4px;">Orchestrating ${filteredTasks.length} objectives across ${selectedPid === 'all' ? 'all streams' : 'selected stream'}.</p>
-            </div>
-            
-            <div style="display:flex; gap:12px; align-items:center;">
-                <label style="font-size:12px; font-weight:700; color:var(--gray-500); text-transform:uppercase;">Stream Filter:</label>
-                <select class="modern-input" id="task-project-filter" style="width: 200px; height: 40px; font-size: 13px; border-radius: 10px; padding: 0 12px;">
-                    <option value="all" ${selectedPid === 'all' ? 'selected' : ''}>All Projects</option>
-                    ${myProjects.map(p => `<option value="${p._id}" ${selectedPid === String(p._id) ? 'selected' : ''}>${p.name}</option>`).join('')}
-                </select>
+                <p style="color: var(--gray-600); margin-top: 4px;">Orchestrating ${activeTasks.length} objectives across ${selectedPid === 'all' ? 'all streams' : 'selected stream'}.</p>
             </div>
         </div>
 
         <div class="kanban-board" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; align-items: start;">
             ${columns.map(col => {
-                const colTasks = filteredTasks.filter(t => t.status === col.id);
+                const colTasks = activeTasks.filter(t => t.status === col.id);
                 return `
                     <div class="kanban-column" style="background: rgba(248, 250, 252, 0.5); border-radius: 16px; min-height: 600px; display:flex; flex-direction: column; border: 1px solid #f1f5f9;">
                         <div class="kanban-header" style="padding: 16px; display:flex; justify-content: space-between; align-items: center; border-bottom: 2px solid ${col.color}20;">
@@ -2186,14 +2398,200 @@ function renderEmployeeTasksView(container) {
                 `;
             }).join('')}
         </div>
+
+        <!-- Team Stream Panel — visible to ALL project members (Lead & Employee) -->
+        ${hasStreamContent ? `
+        <div class="team-stream-section ${isTeamLead ? '' : 'employee-pulse'}" id="team-stream-section">
+            <div class="team-stream-header" onclick="toggleTeamStream()" id="team-stream-header">
+                <div class="team-stream-header-left">
+                    <div class="ts-crown-icon" style="${isTeamLead ? '' : 'background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); box-shadow: 0 4px 12px rgba(59,130,246,0.3);'}">
+                        <i class="fas ${isTeamLead ? 'fa-crown' : 'fa-users'}"></i>
+                    </div>
+                    <div>
+                        <h3>${isTeamLead ? 'Team Stream' : 'Team Pulse'}</h3>
+                        <p>${isTeamLead
+                            ? `Monitor your team members task progress across ${streamProjectsForLead.length} project${streamProjectsForLead.length > 1 ? 's' : ''}.`
+                            : `Track your teammates' task progress across ${streamProjectsForMember.length} shared project${streamProjectsForMember.length > 1 ? 's' : ''}.`
+                        }</p>
+                    </div>
+                </div>
+                <div class="ts-header-right">
+                    <span class="ts-total-badge" id="ts-total-badge" style="${isTeamLead ? '' : 'background: rgba(59,130,246,0.12); color: #1d4ed8; border-color: rgba(59,130,246,0.25);'}">Loading...</span>
+                    <i class="fas fa-chevron-down ts-toggle-icon" id="ts-toggle-icon"></i>
+                </div>
+            </div>
+            <div class="team-stream-body" id="team-stream-body">
+                <div class="team-stream-inner" id="team-stream-inner">
+                    <div class="ts-loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Synchronizing team data...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
     `;
 
-    // Event Listeners
-    document.getElementById('task-project-filter').onchange = (e) => {
-        FlowSenseState.currentSelectedProjectForTasks = e.target.value;
-        renderEmployeeTasksView(container);
-    };
+    // Populate Team Stream section for ALL users who have shared project memberships
+    if (hasStreamContent) {
+        const projectsToStream = streamProjectsForLead.length > 0 ? streamProjectsForLead : streamProjectsForMember;
+        // Apply Global Filter 
+        const filteredProjectsToStream = selectedPid === 'all' ? projectsToStream : projectsToStream.filter(p => String(p._id) === selectedPid);
+        
+        renderTeamStreamSection(filteredProjectsToStream, userId, isTeamLead);
+    }
 }
+
+// ── Toggle Team Stream Panel ──
+window.toggleTeamStream = function() {
+    const body   = document.getElementById('team-stream-body');
+    const icon   = document.getElementById('ts-toggle-icon');
+    if (!body || !icon) return;
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    icon.classList.toggle('open', !isOpen);
+};
+
+// ── Fetch & Render the Team Stream content ──
+// Works for both Team Leads (monitoring their team) and
+// regular Employees (monitoring teammates in shared projects).
+async function renderTeamStreamSection(projects, currentUserId, isTeamLead = false) {
+    const inner = document.getElementById('team-stream-inner');
+    const badge = document.getElementById('ts-total-badge');
+    if (!inner) return;
+
+    try {
+        // Fetch tasks for all relevant projects in parallel
+        const allProjectData = await Promise.all(
+            projects.map(async (proj) => {
+                const projId = proj._id || proj.id;
+                try {
+                    const res  = await fetch(`/api/tasks/project/${projId}`);
+                    const data = await res.json();
+                    return {
+                        project: proj,
+                        tasks:   data.success ? data.data : []
+                    };
+                } catch (e) {
+                    return { project: proj, tasks: [] };
+                }
+            })
+        );
+
+        // Filter out the current user's own tasks — show only other members' tasks
+        let grandTotal = 0;
+        const projectBlocks = allProjectData.map(({ project, tasks }) => {
+            // Only tasks NOT assigned to the viewer
+            const teamTasks = tasks.filter(t => {
+                const assigneeId = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
+                return String(assigneeId) !== String(currentUserId);
+            });
+            grandTotal += teamTasks.length;
+
+            if (teamTasks.length === 0) return null;
+
+            // Group tasks by member
+            const memberMap = new Map();
+            teamTasks.forEach(t => {
+                const assignee   = t.assigned_to;
+                const assigneeId = assignee?._id || assignee?.id || String(t.assigned_to);
+                if (!memberMap.has(String(assigneeId))) {
+                    memberMap.set(String(assigneeId), {
+                        id:    String(assigneeId),
+                        name:  assignee?.name  || 'Team Member',
+                        role:  assignee?.role  || 'Employee',
+                        tasks: []
+                    });
+                }
+                memberMap.get(String(assigneeId)).tasks.push(t);
+            });
+
+            const memberRows = [...memberMap.values()].map(member => {
+                const pillsHtml = member.tasks.map(t => {
+                    const statusClass = t.status
+                        ? t.status.toLowerCase().replace(/\s+/g, '-')
+                        : 'pending';
+                    const deadline = t.deadline
+                        ? new Date(t.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                        : 'No date';
+                    return `
+                        <div class="ts-task-pill">
+                            <span class="ts-task-name">${t.name}</span>
+                            <div class="ts-task-meta">
+                                <span class="ts-task-deadline"><i class="far fa-calendar-alt"></i> ${deadline}</span>
+                                <span class="ts-status-badge ${statusClass}">${t.status || 'Pending'}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                const avatarColor = member.role === 'Developer' ? '3b82f6'
+                    : member.role === 'Designer'  ? 'ec4899'
+                    : member.role === 'Tester'    ? 'f59e0b'
+                    : member.role === 'DevOps'    ? '10b981'
+                    : '8b5cf6';
+
+                return `
+                    <div class="ts-member-row">
+                        <div class="ts-member-header">
+                            <img class="ts-member-avatar"
+                                 src="https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=${avatarColor}&color=fff"
+                                 alt="${member.name}">
+                            <span class="ts-member-name">${member.name}</span>
+                            <span class="ts-member-role">${member.role}</span>
+                            <span class="ts-member-task-count">${member.tasks.length} task${member.tasks.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="ts-task-pills">${pillsHtml}</div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="ts-project-group">
+                    <div class="ts-project-label">
+                        <div class="ts-project-dot" style="${isTeamLead ? '' : 'background: #3b82f6;'}"></div>
+                        <h4>${project.name}</h4>
+                        <span class="ts-proj-task-count">${teamTasks.length} task${teamTasks.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    ${memberRows}
+                </div>
+            `;
+        }).filter(Boolean);
+
+        // Update badge count
+        if (badge) {
+            badge.textContent = grandTotal + ' Team Task' + (grandTotal !== 1 ? 's' : '');
+        }
+
+        const emptyMsg = isTeamLead
+            ? 'No team tasks detected. Deploy tasks to your members to monitor them here.'
+            : 'No teammate tasks found. This panel will populate once your teammates receive assignments.';
+
+        if (projectBlocks.length === 0) {
+            inner.innerHTML = `
+                <div class="ts-empty-state">
+                    <i class="fas fa-satellite-dish"></i>
+                    <p>${emptyMsg}</p>
+                </div>
+            `;
+        } else {
+            inner.innerHTML = projectBlocks.join('');
+        }
+
+    } catch (err) {
+        console.error('Team Stream sync failed:', err);
+        if (inner) {
+            inner.innerHTML = `
+                <div class="ts-empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Unable to synchronize team data. Check your connection.</p>
+                </div>
+            `;
+        }
+        if (badge) badge.textContent = 'Sync Error';
+    }
+}
+
 
 // Global functions for Kanban
 window.toggleTaskMenu = (e, tid) => {
@@ -2208,7 +2606,7 @@ window.toggleTaskMenu = (e, tid) => {
 window.updateTaskStatus = async (tid, newStatus) => {
     showToast('Updating objective status...', 'info');
     try {
-        const res = await fetch(`http://localhost:5000/api/tasks/${tid}/status`, {
+        const res = await fetch(`/api/tasks/${tid}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: newStatus })
@@ -2327,7 +2725,7 @@ async function addNotification(type, title, desc, longDesc, category, projectLin
     if (!companyId) return;
 
     try {
-        const res = await fetch('http://localhost:5000/api/notifications', {
+        const res = await fetch('/api/notifications', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2470,7 +2868,7 @@ async function markAllRead(e) {
     if (!companyId) return;
 
     try {
-        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
+        const res = await fetch(`/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             FlowSenseNotifications.forEach(n => n.read = true);
@@ -2485,7 +2883,7 @@ async function markAllRead(e) {
 async function markAsRead(e, id) {
     if (e) e.stopPropagation();
     try {
-        const res = await fetch(`http://localhost:5000/api/notifications/${id}/read`, { method: 'PUT' });
+        const res = await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             const n = FlowSenseNotifications.find(x => x.id === id);
@@ -2549,7 +2947,7 @@ async function fetchLiveProfile() {
     if (!id || !role) return;
 
     try {
-        const res = await fetch(`http://localhost:5000/api/auth/profile/${id}/${role}`);
+        const res = await fetch(`/api/auth/profile/${id}/${role}`);
         const data = await res.json();
         if (data.success) {
             const user = data.data;
@@ -2633,7 +3031,7 @@ async function fetchSkillSuggestions(role) {
     if (!container || !group) return;
 
     try {
-        const res = await fetch(`http://localhost:5000/api/auth/skills/${role}`);
+        const res = await fetch(`/api/auth/skills/${role}`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             group.style.display = 'block';
@@ -2668,7 +3066,8 @@ function openSettingsPanel() {
     
     document.getElementById('profile-view-main').style.display = 'none';
     document.getElementById('profile-view-settings').style.display = 'block';
-    document.getElementById('profile-view-billing').style.display = 'none';
+    const billingView = document.getElementById('profile-view-billing');
+    if (billingView) billingView.style.display = 'none';
     
     // Fill current data
     document.getElementById('edit-name').value = user.name || '';
@@ -2757,7 +3156,7 @@ async function handleProfileUpdate(e) {
 
     try {
         console.log('TRANSMITTING IDENTITY SYNC:', { id, role, name, email, role_field: role_val, skills: skills_val });
-        const res = await fetch('http://localhost:5000/api/auth/profile', {
+        const res = await fetch('/api/auth/profile', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -2797,7 +3196,7 @@ async function handleAvatarUpload(e) {
             const base64 = event.target.result;
             
             try {
-                const res = await fetch('http://localhost:5000/api/auth/profile', {
+                const res = await fetch('/api/auth/profile', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, role, profile_image: base64 })
