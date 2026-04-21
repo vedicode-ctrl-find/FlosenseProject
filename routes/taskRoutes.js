@@ -32,15 +32,33 @@ router.post('/', async (req, res) => {
     try {
         const { name, description, required_skills, deadline, hours, assigned_to, project_id, company_id, requested_by } = req.body;
 
+        const project = await Project.findById(project_id);
+        if (!project) {
+            return res.status(404).json({ success: false, error: 'Project not found' });
+        }
+
         // ── AUTHORIZATION: Only the Team Lead of this project can assign tasks ──
         if (requested_by) {
-            const project = await Project.findById(project_id);
-            if (!project) {
-                return res.status(404).json({ success: false, error: 'Project not found' });
-            }
             const isTeamLead = project.team_lead.toString() === requested_by.toString();
             if (!isTeamLead) {
                 return res.status(403).json({ success: false, error: 'Access denied. Only the Team Lead of this project can assign tasks.' });
+            }
+        }
+
+        // ── DATE VALIDATION: Task deadline must be within the project schedule ──
+        if (deadline) {
+            const taskDateStr = new Date(deadline).toISOString().split('T')[0];
+            const projectStartStr = new Date(project.created_at).toISOString().split('T')[0];
+            
+            if (taskDateStr < projectStartStr) {
+                return res.status(400).json({ success: false, error: 'Task deadline cannot be before the project started.' });
+            }
+
+            if (project.deadline) {
+                const projectEndStr = new Date(project.deadline).toISOString().split('T')[0];
+                if (taskDateStr > projectEndStr) {
+                    return res.status(400).json({ success: false, error: 'Task deadline cannot be after the project deadline.' });
+                }
             }
         }
         

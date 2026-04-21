@@ -1449,7 +1449,7 @@ function openProjectDetails(projectId) {
         tabsContent = `
             <div class="project-details-tabs" style="margin-top:20px; display:flex; gap:10px;">
                 <button class="btn btn-primary">My Tasks</button>
-                <button class="btn btn-secondary" onclick="alert('Opening chat component...')">Chat / Requests</button>
+                <button class="btn btn-secondary" onclick="toggleChatPanel(event)">Chat / Requests</button>
             </div>
             <div class="project-details-section" style="margin-top:20px;">
                 <button class="btn btn-secondary btn-sm" onclick="loadView('projects')">Back to Projects</button>
@@ -2199,6 +2199,204 @@ async function handleAvatarUpload(e) {
         reader.readAsDataURL(file);
     }
 }
+
+// ══════════════════════════════════════════════════════════
+// GLOBAL CHAT PANEL SYSTEM
+// ══════════════════════════════════════════════════════════
+
+let chatActiveProjectId = null;
+let chatMessages = [];
+let chatPollInterval = null;
+
+function toggleChatPanel(e) {
+    if (e) e.stopPropagation();
+    const sheet = document.getElementById('chat-sheet');
+    const overlay = document.getElementById('chat-sheet-overlay');
+    if (!sheet || !overlay) return;
+    const isOpen = sheet.classList.contains('show');
+
+    const notifSheet = document.getElementById('notifications-sheet');
+    const notifOverlay = document.getElementById('notif-sheet-overlay');
+    if (notifSheet && notifSheet.classList.contains('show')) {
+        notifSheet.classList.remove('show');
+        if (notifOverlay) notifOverlay.classList.remove('show');
+    }
+    const profileSheet = document.getElementById('profile-sheet');
+    const profileOverlay = document.getElementById('profile-sheet-overlay');
+    if (profileSheet && profileSheet.classList.contains('show')) {
+        profileSheet.classList.remove('show');
+        if (profileOverlay) profileOverlay.classList.remove('show');
+    }
+
+    if (!isOpen) {
+        sheet.classList.add('show');
+        overlay.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        renderChatProjectSelector();
+        const ctxId = FlowSenseState.globalSelectedProjectId;
+        if (ctxId && ctxId !== 'all' && FlowSenseState.projects.some(p => String(p._id) === ctxId)) {
+            selectChatProject(ctxId);
+        } else if (FlowSenseState.projects.length > 0) {
+            selectChatProject(FlowSenseState.projects[0]._id);
+        }
+        if (chatPollInterval) clearInterval(chatPollInterval);
+        chatPollInterval = setInterval(() => {
+            if (chatActiveProjectId) loadChatMessages(chatActiveProjectId, true);
+        }, 8000);
+    } else {
+        sheet.classList.remove('show');
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+        if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+    }
+}
+
+function renderChatProjectSelector() {
+    const selector = document.getElementById('chat-project-selector');
+    if (!selector) return;
+    const projects = FlowSenseState.projects || [];
+    if (projects.length === 0) {
+        selector.innerHTML = '<span style="font-size:12px; color:var(--gray-400); padding:4px;">No projects available</span>';
+        return;
+    }
+    selector.innerHTML = projects.map(p => `
+        <div class="chat-proj-chip ${chatActiveProjectId === String(p._id) ? 'active' : ''}" 
+             onclick="selectChatProject('${p._id}')">
+            ${p.name}
+        </div>
+    `).join('');
+}
+
+async function selectChatProject(projectId) {
+    chatActiveProjectId = String(projectId);
+    const p = FlowSenseState.projects.find(proj => String(proj._id) === chatActiveProjectId);
+    const label = document.getElementById('chat-project-label');
+    if (label) label.textContent = p ? p.name : 'Project Chat';
+    renderChatProjectSelector();
+    await loadChatMessages(chatActiveProjectId);
+}
+
+async function loadChatMessages(projectId, silent = false) {
+    if (!projectId) return;
+    try {
+        const res = await fetch(`/api/messages/project/${projectId}`);
+        const data = await res.json();
+        if (data.success) {
+            const prevLen = chatMessages.length;
+            chatMessages = data.data || [];
+            renderChatMessagesList();
+            if (!silent || chatMessages.length > prevLen) {
+                const container = document.getElementById('chat-messages');
+                if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
+            }
+        }
+    } catch (err) {
+        console.error('Chat load failed:', err);
+    }
+}
+
+function renderChatMessagesList() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    const userId = localStorage.getItem('userId');
+
+    if (chatMessages.length === 0) {
+        container.innerHTML = `
+            <div class="chat-empty-state">
+                <i class="fas fa-comment-dots"></i>
+                <p>No messages yet</p>
+                <span>Start a conversation with your team</span>
+            </div>`;
+        return;
+    }
+
+    let lastDate = '';
+    let html = '';
+    chatMessages.forEach(msg => {
+        const msgDate = new Date(msg.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        if (msgDate !== lastDate) {
+            html += `<div class="chat-date-sep"><span>${msgDate}</span></div>`;
+            lastDate = msgDate;
+        }
+        const isMine = String(msg.senderId) === String(userId);
+        const isLead = (msg.senderRole || '').toLowerCase().includes('lead') || (msg.senderRole || '').toLowerCase().includes('company');
+        const alignment = isMine ? 'align-right' : 'align-left';
+        const bubbleClass = isMine ? 'chat-bubble-mine' : (isLead ? 'chat-bubble-lead' : 'chat-bubble-other');
+        const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const typeBadge = msg.messageType && msg.messageType !== 'General'
+            ? `<div class="chat-req-badge">${msg.messageType}</div>` : '';
+
+        html += `
+            <div class="chat-message-row ${alignment}">
+                <div class="chat-bubble ${bubbleClass}">
+                    ${!isMine ? `<div class="chat-meta">${msg.senderName || 'Team Member'} · ${msg.senderRole || 'Employee'}</div>` : ''}
+                    ${typeBadge}
+                    <div>${msg.message}</div>
+                    <div class="chat-time">${timeStr}</div>
+                </div>
+            </div>`;
+    });
+    container.innerHTML = html;
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const typeSelect = document.getElementById('chat-msg-type');
+    if (!input || !chatActiveProjectId) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    const userId = localStorage.getItem('userId');
+    const userName = localStorage.getItem('userName') || 'User';
+    const userRole = localStorage.getItem('userRole');
+    const displayRole = FlowSenseState.userProfile?.display_role || (userRole === 'company' ? 'Company Lead' : 'Team Lead');
+    const senderModel = userRole === 'company' ? 'Company' : 'Employee';
+
+    input.value = '';
+    input.focus();
+
+    try {
+        const res = await fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                projectId: chatActiveProjectId,
+                senderId: userId,
+                senderModel: senderModel,
+                senderName: userName,
+                senderRole: displayRole,
+                message: text,
+                messageType: typeSelect ? typeSelect.value : 'General'
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            chatMessages.push(data.data);
+            renderChatMessagesList();
+            const container = document.getElementById('chat-messages');
+            if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
+        } else {
+            showToast(data.error || 'Failed to send message.', 'danger');
+        }
+    } catch (err) {
+        showToast('Network error: Message not sent.', 'danger');
+    }
+    if (typeSelect) typeSelect.value = 'General';
+}
+
+window.addEventListener('click', (e) => {
+    const sheet = document.getElementById('chat-sheet');
+    const overlay = document.getElementById('chat-sheet-overlay');
+    if (!document.body.contains(e.target)) return;
+    if (sheet && sheet.classList.contains('show')) {
+        if (!sheet.contains(e.target) && !e.target.closest('.chat-bell') && !e.target.closest('#chat-bell-btn')) {
+            sheet.classList.remove('show');
+            if (overlay) overlay.classList.remove('show');
+            document.body.style.overflow = '';
+            if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+        }
+    }
+});
 
 function logout() {
     localStorage.clear();

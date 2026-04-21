@@ -119,7 +119,23 @@ function setupEventListeners() {
     const form           = document.getElementById('task-form');
 
     projectSelect.addEventListener('change', e => {
-        loadProjectMembers(e.target.value);
+        const projectId = e.target.value;
+        loadProjectMembers(projectId);
+
+        const deadlineInput = document.getElementById('task-deadline');
+        const selectedProject = leadProjects.find(p => p._id === projectId);
+
+        if (selectedProject) {
+            if (selectedProject.created_at) {
+                deadlineInput.min = selectedProject.created_at.split('T')[0];
+            }
+            if (selectedProject.deadline) {
+                deadlineInput.max = selectedProject.deadline.split('T')[0];
+            }
+        } else {
+            deadlineInput.removeAttribute('min');
+            deadlineInput.removeAttribute('max');
+        }
     });
 
     assigneeSelect.addEventListener('change', handleAssigneeSelect);

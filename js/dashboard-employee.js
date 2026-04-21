@@ -1771,7 +1771,7 @@ function openProjectDetails(projectId) {
                 <button class="btn btn-secondary btn-glass" onclick="loadView('projects')"><i class="fas fa-arrow-left"></i> Back</button>
                 ${leadActions}
                 <button class="btn btn-primary" style="background:var(--violet-gradient);" onclick="loadView('tasks')"><i class="fas fa-tasks"></i> My Tasks</button>
-                <button class="btn btn-secondary" onclick="alert('Opening secure channel...')"><i class="fas fa-comments"></i> Chat / Requests</button>
+                <button class="btn btn-secondary" onclick="toggleChatPanel(event)"><i class="fas fa-comments"></i> Chat / Requests</button>
             </div>
         `;
     }
@@ -2386,8 +2386,13 @@ function renderEmployeeTasksView(container) {
                                             <i class="far fa-calendar-alt"></i>
                                             <span>${new Date(t.deadline).toLocaleDateString()}</span>
                                         </div>
-                                        <div style="font-size: 11px; font-weight: 700; color: var(--gray-700);">
-                                            ${t.hours}h
+                                        <div style="display:flex; align-items: center; gap: 8px;">
+                                            <button class="btn-xs" style="background:#f3e8ff; color:#7c3aed; border:none; padding:4px 8px; border-radius:6px; cursor:pointer; font-weight:600; font-size:11px;" onclick="openTaskCommunicationModal('${t._id}', '${t.name.replace(/'/g, "\\'")}')">
+                                                <i class="fas fa-comment-alt"></i> Discuss
+                                            </button>
+                                            <div style="font-size: 11px; font-weight: 700; color: var(--gray-700);">
+                                                ${t.hours}h
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2517,9 +2522,14 @@ async function renderTeamStreamSection(projects, currentUserId, isTeamLead = fal
                     return `
                         <div class="ts-task-pill">
                             <span class="ts-task-name">${t.name}</span>
-                            <div class="ts-task-meta">
-                                <span class="ts-task-deadline"><i class="far fa-calendar-alt"></i> ${deadline}</span>
-                                <span class="ts-status-badge ${statusClass}">${t.status || 'Pending'}</span>
+                            <div class="ts-task-meta" style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                <div>
+                                    <span class="ts-task-deadline"><i class="far fa-calendar-alt"></i> ${deadline}</span>
+                                    <span class="ts-status-badge ${statusClass}">${t.status || 'Pending'}</span>
+                                </div>
+                                <button class="btn-xs" style="background:transparent; color:#7c3aed; border:1px solid #e9d5ff; border-radius:4px; cursor:pointer;" onclick="openTaskCommunicationModal('${t._id}', '${t.name.replace(/'/g, "\\'")}')">
+                                    <i class="fas fa-comment-alt"></i>
+                                </button>
                             </div>
                         </div>
                     `;
@@ -3215,6 +3225,362 @@ async function handleAvatarUpload(e) {
         reader.readAsDataURL(file);
     }
 }
+
+// ══════════════════════════════════════════════════════════
+// GLOBAL HYBRID CHAT SYSTEM
+// ══════════════════════════════════════════════════════════
+
+let chatActiveProjectId = null;
+let chatSelectedType = 'project'; // 'project', 'direct', 'task'
+let chatSelectedMemberId = null;
+let chatSelectedTaskId = null;
+let chatMessages = [];
+let chatPollInterval = null;
+
+function toggleChatPanel(e) {
+    if (e) e.stopPropagation();
+    const sheet = document.getElementById('chat-sheet');
+    const overlay = document.getElementById('chat-sheet-overlay');
+    if (!sheet || !overlay) return;
+    const isOpen = sheet.classList.contains('show');
+
+    // Close other panels
+    const notifSheet = document.getElementById('notifications-sheet');
+    const notifOverlay = document.getElementById('notif-sheet-overlay');
+    if (notifSheet && notifSheet.classList.contains('show')) {
+        notifSheet.classList.remove('show');
+        if (notifOverlay) notifOverlay.classList.remove('show');
+    }
+    const profileSheet = document.getElementById('profile-sheet');
+    const profileOverlay = document.getElementById('profile-sheet-overlay');
+    if (profileSheet && profileSheet.classList.contains('show')) {
+        profileSheet.classList.remove('show');
+        if (profileOverlay) profileOverlay.classList.remove('show');
+    }
+
+    if (!isOpen) {
+        sheet.classList.add('show');
+        overlay.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        
+        // Auto-select current project context
+        const ctxId = FlowSenseState.globalSelectedProjectId;
+        if (ctxId && ctxId !== 'all' && FlowSenseState.projects.some(p => String(p._id) === ctxId)) {
+            selectChatProject(ctxId);
+        } else if (FlowSenseState.projects.length > 0) {
+            selectChatProject(FlowSenseState.projects[0]._id);
+        } else {
+            renderChatProjectSelector();
+            renderChatMembersList();
+        }
+
+        // Start polling
+        if (chatPollInterval) clearInterval(chatPollInterval);
+        chatPollInterval = setInterval(() => {
+            if (chatActiveProjectId) loadChatMessages(true);
+        }, 8000);
+    } else {
+        sheet.classList.remove('show');
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+        if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+    }
+}
+
+function renderChatProjectSelector() {
+    const selector = document.getElementById('chat-project-selector');
+    if (!selector) return;
+    
+    const currentUserId = localStorage.getItem('userId');
+    // FILTER: Only show projects where I am a lead or member
+    const myProjects = (FlowSenseState.projects || []).filter(p => {
+        const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
+        const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+        const isLead = leadId && String(leadId) === String(currentUserId);
+        const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(currentUserId));
+        return isLead || isMember;
+    });
+
+    if (myProjects.length === 0) {
+        selector.innerHTML = '<span style="font-size:11px; color:var(--gray-400); padding:8px 16px;">No projects</span>';
+        return;
+    }
+    selector.innerHTML = myProjects.map(p => `
+        <div class="chat-proj-chip ${chatActiveProjectId === String(p._id) && chatSelectedType === 'project' ? 'active' : ''}" 
+             onclick="selectChatProject('${p._id}')">
+            <i class="fas fa-hashtag" style="margin-right:8px; font-size:10px; opacity:0.5;"></i>
+            ${p.name}
+        </div>
+    `).join('');
+}
+
+async function renderChatMembersList() {
+    const list = document.getElementById('chat-members-list');
+    if (!list) return;
+    
+    if (!chatActiveProjectId) {
+        list.innerHTML = '<span style="font-size:11px; color:var(--gray-400); padding:8px 16px;">Select a project first</span>';
+        return;
+    }
+
+    const project = FlowSenseState.projects.find(p => String(p._id) === chatActiveProjectId);
+    if (!project) return;
+
+    const currentUserId = localStorage.getItem('userId');
+    const allEmployees = await fetchLiveEmployees();
+    
+    // Get members of this project
+    const memberIds = (project.team_members || []).map(m => String(m._id || m.id || m));
+    const leadId = project.team_lead && (project.team_lead._id || project.team_lead.id || project.team_lead);
+    
+    if (leadId && !memberIds.includes(String(leadId))) {
+        memberIds.push(String(leadId));
+    }
+
+    // Filter out self
+    const projectMembers = allEmployees.filter(e => memberIds.includes(String(e._id)) && String(e._id) !== currentUserId);
+
+    if (projectMembers.length === 0) {
+        list.innerHTML = '<span style="font-size:11px; color:var(--gray-400); padding:8px 16px;">No other members</span>';
+        return;
+    }
+
+    list.innerHTML = projectMembers.map(m => `
+        <div class="chat-member-item ${chatSelectedType === 'direct' && chatSelectedMemberId === String(m._id) ? 'active' : ''}" 
+             onclick="selectDirectChat('${m._id}', '${m.name.replace(/'/g, "\\'")}')">
+            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(m.name)}&background=8b5cf6&color=fff" class="chat-member-avatar">
+            <div class="chat-member-info">
+                <span class="chat-member-name">${m.name}</span>
+                <span class="chat-member-role">${m.role || 'Member'}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function selectChatProject(projectId) {
+    chatActiveProjectId = String(projectId);
+    chatSelectedType = 'project';
+    chatSelectedMemberId = null;
+    chatSelectedTaskId = null;
+    
+    const p = FlowSenseState.projects.find(proj => String(proj._id) === chatActiveProjectId);
+    const label = document.getElementById('chat-project-label');
+    if (label) label.textContent = p ? `Group: ${p.name}` : 'Project Chat';
+    
+    document.getElementById('chat-input-bar').style.display = 'flex';
+    
+    renderChatProjectSelector();
+    renderChatMembersList();
+    await loadChatMessages();
+}
+
+async function selectDirectChat(memberId, memberName) {
+    chatSelectedType = 'direct';
+    chatSelectedMemberId = String(memberId);
+    chatSelectedTaskId = null;
+    
+    const label = document.getElementById('chat-project-label');
+    if (label) label.textContent = `Direct: ${memberName}`;
+    
+    document.getElementById('chat-input-bar').style.display = 'flex';
+    
+    renderChatProjectSelector();
+    renderChatMembersList();
+    await loadChatMessages();
+}
+
+async function selectTaskChat(taskId, taskName, projectId) {
+    chatActiveProjectId = String(projectId);
+    chatSelectedType = 'task';
+    chatSelectedMemberId = null;
+    chatSelectedTaskId = String(taskId);
+    
+    const label = document.getElementById('chat-project-label');
+    if (label) label.textContent = `Task: ${taskName}`;
+    
+    document.getElementById('chat-input-bar').style.display = 'flex';
+    
+    // If not open, open it
+    const sheet = document.getElementById('chat-sheet');
+    if (!sheet.classList.contains('show')) toggleChatPanel();
+    
+    renderChatProjectSelector();
+    renderChatMembersList();
+    await loadChatMessages();
+}
+
+async function loadChatMessages(silent = false) {
+    if (!chatActiveProjectId) return;
+    
+    let url = '';
+    if (chatSelectedType === 'project') {
+        url = `/api/messages/project/${chatActiveProjectId}`;
+    } else if (chatSelectedType === 'direct') {
+        const currentUserId = localStorage.getItem('userId');
+        url = `/api/messages/direct/${chatActiveProjectId}/${currentUserId}/${chatSelectedMemberId}`;
+    } else if (chatSelectedType === 'task') {
+        url = `/api/messages/task/${chatSelectedTaskId}`;
+    }
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+            const prevLen = chatMessages.length;
+            chatMessages = data.data || [];
+            renderChatMessagesList();
+            // Auto-scroll on new messages or first load
+            if (!silent || chatMessages.length > prevLen) {
+                const container = document.getElementById('chat-messages');
+                if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
+            }
+        }
+    } catch (err) {
+        console.error('Chat load failed:', err);
+    }
+}
+
+function renderChatMessagesList() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    const userId = localStorage.getItem('userId');
+
+    if (chatMessages.length === 0) {
+        container.innerHTML = `
+            <div class="chat-empty-state">
+                <i class="fas fa-comment-dots"></i>
+                <p>No messages yet</p>
+                <span>Start a conversation ${chatSelectedType === 'direct' ? 'privately' : 'with your team'}</span>
+            </div>`;
+        return;
+    }
+
+    let lastDate = '';
+    let html = '';
+    
+    // Get active project name for context tags
+    const activeProject = FlowSenseState.projects.find(p => String(p._id) === chatActiveProjectId);
+    const projectName = activeProject ? activeProject.name : 'Unknown Project';
+
+    chatMessages.forEach(msg => {
+        // Date separator
+        const msgDate = new Date(msg.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        if (msgDate !== lastDate) {
+            html += `<div class="chat-date-sep"><span>${msgDate}</span></div>`;
+            lastDate = msgDate;
+        }
+
+        const isMine = String(msg.senderId) === String(userId);
+        const isLead = (msg.senderRole || '').toLowerCase().includes('lead') || (msg.senderRole || '').toLowerCase().includes('company');
+        const alignment = isMine ? 'align-right' : 'align-left';
+        
+        // Dynamic bubble style
+        let bubbleClass = 'chat-bubble-other';
+        if (isMine) bubbleClass = 'chat-bubble-mine';
+        else if (isLead) bubbleClass = 'chat-bubble-lead';
+
+        const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const typeBadge = msg.messageType && msg.messageType !== 'General'
+            ? `<div class="chat-req-badge" style="background: rgba(255,255,255,0.2); font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-bottom: 5px; display: inline-block;">${msg.messageType}</div>` : '';
+
+        // Project Context Tag for Direct Messages
+        const contextTag = (chatSelectedType === 'direct') 
+            ? `<div class="chat-context-tag"><i class="fas fa-layer-group"></i> # ${projectName}</div>` 
+            : '';
+
+        html += `
+            <div class="chat-message-row ${alignment}">
+                <div class="chat-bubble ${bubbleClass}">
+                    ${!isMine ? `<div class="chat-meta">${msg.senderName || 'Team Member'} · ${msg.senderRole || 'Employee'}</div>` : ''}
+                    ${contextTag}
+                    ${typeBadge}
+                    <div class="chat-msg-text">${msg.message}</div>
+                    <div class="chat-time">${timeStr}</div>
+                </div>
+            </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const typeSelect = document.getElementById('chat-msg-type');
+    if (!input || !chatActiveProjectId) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    const userId = localStorage.getItem('userId');
+    const userName = localStorage.getItem('userName') || 'User';
+    const userRole = localStorage.getItem('userRole');
+    const displayRole = FlowSenseState.userProfile?.display_role || (userRole === 'company' ? 'Company Lead' : 'Employee');
+    const senderModel = userRole === 'company' ? 'Company' : 'Employee';
+
+    const payload = {
+        projectId: chatActiveProjectId,
+        senderId: userId,
+        senderModel: senderModel,
+        senderName: userName,
+        senderRole: displayRole,
+        message: text,
+        messageType: typeSelect ? typeSelect.value : 'General',
+        chatType: chatSelectedType,
+        receiverId: chatSelectedMemberId,
+        taskId: chatSelectedTaskId
+    };
+
+    input.value = '';
+    input.focus();
+
+    try {
+        const res = await fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+            chatMessages.push(data.data);
+            renderChatMessagesList();
+            const container = document.getElementById('chat-messages');
+            if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
+        } else {
+            showToast(data.error || 'Failed to send message.', 'danger');
+        }
+    } catch (err) {
+        showToast('Network error: Message not sent.', 'danger');
+    }
+
+    // Reset type select
+    if (typeSelect) typeSelect.value = 'General';
+}
+
+// Wire up the task communication buttons to open the hybrid chat
+window.openTaskCommunicationModal = function(taskId, taskName) {
+    // Find project for this task
+    const task = FlowSenseState.tasks.find(t => String(t._id || t.id) === String(taskId));
+    if (task) {
+        const pid = task.project_id?._id || task.project_id?.id || task.project_id;
+        selectTaskChat(taskId, taskName, pid);
+    } else {
+        toggleChatPanel();
+    }
+};
+
+// Close chat panel on outside click
+window.addEventListener('click', (e) => {
+    const sheet = document.getElementById('chat-sheet');
+    const overlay = document.getElementById('chat-sheet-overlay');
+    if (!document.body.contains(e.target)) return;
+    if (sheet && sheet.classList.contains('show')) {
+        if (!sheet.contains(e.target) && !e.target.closest('.chat-bell') && !e.target.closest('#chat-bell-btn')) {
+            sheet.classList.remove('show');
+            if (overlay) overlay.classList.remove('show');
+            document.body.style.overflow = '';
+            if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+        }
+    }
+});
 
 function logout() {
     localStorage.clear();

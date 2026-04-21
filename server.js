@@ -24,6 +24,7 @@ const projectRoutes = require('./routes/projectRoutes');
 const taskRoutes    = require('./routes/taskRoutes');
 const teamRoutes    = require('./routes/teamRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const messageRoutes = require('./routes/messageRoutes');
 
 // Mount routes
 app.use('/api/auth',         authRoutes);
@@ -31,6 +32,7 @@ app.use('/api/projects',     projectRoutes);
 app.use('/api/tasks',        taskRoutes);
 app.use('/api/team-members', teamRoutes); 
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/messages',     messageRoutes);
 
 // Root route
 app.get('/', (req, res) => {

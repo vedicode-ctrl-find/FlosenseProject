@@ -46,7 +46,7 @@ router.get('/lead/:leadId', async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.leadId)) return res.status(400).json({ success: false, error: 'Invalid Lead ID' });
         const projects = await Project.find({ team_lead: req.params.leadId })
-            .select('name status deadline team_members team_lead priority');
+            .select('name status deadline team_members team_lead priority created_at');
         res.json({ success: true, data: projects });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });

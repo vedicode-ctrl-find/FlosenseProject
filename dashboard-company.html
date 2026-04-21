@@ -71,6 +71,10 @@
                 <input type="text" placeholder="Search tasks, members, or projects...">
             </div>
             <div class="top-actions">
+                <div class="chat-bell" id="chat-bell-btn" onclick="toggleChatPanel(event)">
+                    <i class="fas fa-comments"></i>
+                    <span class="chat-badge" id="chat-unread-badge" style="display:none;">0</span>
+                </div>
                 <div class="notification-bell" onclick="toggleNotifications(event)">
                     <i class="fas fa-bell"></i>
                     <span class="notification-badge" id="suggestion-count" style="display:none;">0</span>
@@ -119,6 +123,60 @@
         </div>
         <div class="notif-sheet-footer">
             <button class="btn-sheet-main dark" onclick="markAllRead(event)">Acknowledge All</button>
+        </div>
+    </aside>
+
+    <!-- Chat Sheet Overlay -->
+    <div id="chat-sheet-overlay" class="chat-sheet-overlay" onclick="toggleChatPanel(event)"></div>
+
+    <!-- Chat Sidebar Sheet -->
+    <aside class="chat-sheet" id="chat-sheet">
+        <div class="chat-header">
+            <div class="chat-header-info">
+                <h3 id="chat-panel-title"><i class="fas fa-comments"></i> Enterprise Sync</h3>
+                <p id="chat-project-label">Select a conversation to begin</p>
+            </div>
+            <button class="chat-close-btn" onclick="toggleChatPanel(event)">✕</button>
+        </div>
+        
+        <div class="chat-hybrid-container">
+            <!-- Left Sidebar: Channels & Members -->
+            <div class="chat-hybrid-sidebar">
+                <div class="chat-sidebar-section">
+                    <label>Enterprise Channels</label>
+                    <div class="chat-project-selector" id="chat-project-selector">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="chat-sidebar-section">
+                    <label>Direct Messaging</label>
+                    <div class="chat-members-list" id="chat-members-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Conversation -->
+            <div class="chat-hybrid-main">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-empty-state">
+                        <i class="fas fa-comment-dots"></i>
+                        <p>Enterprise Network</p>
+                        <span>Select a channel or team member to synchronize intelligence.</span>
+                    </div>
+                </div>
+                <div class="chat-input-bar" id="chat-input-bar" style="display:none;">
+                    <select id="chat-msg-type" class="chat-type-select">
+                        <option value="General">General</option>
+                        <option value="Request">Request</option>
+                        <option value="Update">Update</option>
+                    </select>
+                    <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+                    <button class="chat-send-btn" onclick="sendChatMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
         </div>
     </aside>
 
