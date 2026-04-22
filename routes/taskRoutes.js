@@ -5,6 +5,21 @@ const Task = require('../models/Task');
 const Employee = require('../models/Employee');
 const Project = require('../models/Project');
 
+// Helper to update project progress
+async function updateProjectProgress(projectId) {
+    try {
+        const totalTasks = await Task.countDocuments({ project_id: projectId });
+        const completedTasks = await Task.countDocuments({ project_id: projectId, status: 'Completed' });
+        const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+        await Project.findByIdAndUpdate(projectId, { progress });
+        return progress;
+    } catch (err) {
+        console.error('Error updating project progress:', err);
+    }
+}
+
+
 // Workload capacity base
 const BASE_WEEKLY_HOURS = 40;
 
@@ -88,6 +103,10 @@ router.post('/', async (req, res) => {
         employee.workload_percentage = newWorkload;
         await employee.save();
 
+        // Update Project Progress
+        await updateProjectProgress(project_id);
+
+
         res.status(201).json({ 
             success: true, 
             data: {
@@ -144,6 +163,9 @@ router.put('/:id/status', async (req, res) => {
                 await emp.save();
             }
         }
+
+        // Update Project Progress
+        await updateProjectProgress(task.project_id);
 
         res.json({ success: true, data: task });
     } catch (err) {

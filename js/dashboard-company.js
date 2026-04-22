@@ -1284,9 +1284,19 @@ function openProjectDetails(projectId) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>${p.name}</h2>
-            <p>${p.description}</p>
-            <p style="font-size:12px; color:var(--primary-violet); margin-top:5px;"><i class="fas fa-crown"></i> Lead: ${p.lead}</p>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div>
+                    <h2>${p.name}</h2>
+                    <p>${p.description}</p>
+                    <p style="font-size:12px; color:var(--primary-violet); margin-top:5px;"><i class="fas fa-crown"></i> Lead: ${p.lead}</p>
+                </div>
+                <div style="text-align:right;">
+                    <div class="progress-circle-mini" style="--p:${p.progress || 0}; width:60px; height:60px;">
+                        <span class="p-text" style="font-size:14px;">${p.progress || 0}%</span>
+                    </div>
+                    <p style="font-size:11px; color:var(--gray-400); margin-top:4px;">Stream Progress</p>
+                </div>
+            </div>
         </div>
         ${tabsContent}
     `;
@@ -1351,12 +1361,20 @@ function renderEmployeeOverview(container) {
                 </div>
                 <div class="workload-list">
                     ${FlowSenseState.projects.filter(p => myTasks.some(t => t.projectName === p.name)).map(p => `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f8fafc;">
-                            <div>
-                                <p style="font-weight:600; font-size:14px;">${p.name}</p>
-                                <p style="font-size:12px; color:var(--gray-600);">${p.lead} (Lead)</p>
+                        <div style="padding:12px 0; border-bottom:1px solid #f8fafc;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <div>
+                                    <p style="font-weight:600; font-size:14px;">${p.name}</p>
+                                    <p style="font-size:12px; color:var(--gray-600);">${p.lead} (Lead)</p>
+                                </div>
+                                <div style="text-align:right;">
+                                    <span class="badge" style="background:#f3f4f6; color:var(--gray-600); font-size:11px; padding:4px 8px; border-radius:10px; display:block; margin-bottom:4px;">${p.status}</span>
+                                    <span style="font-size:12px; font-weight:700; color:var(--primary-violet);">${p.progress || 0}%</span>
+                                </div>
                             </div>
-                            <span class="badge" style="background:#f3f4f6; color:var(--gray-600); font-size:11px; padding:4px 8px; border-radius:10px;">${p.status}</span>
+                            <div class="line-progress-bg" style="height:4px;">
+                                <div class="line-progress-fill" style="width: ${p.progress || 0}%"></div>
+                            </div>
                         </div>
                     `).join("") || "<p style=\"font-size:13px; color:var(--gray-600);\">No active projects.</p>"}
                 </div>
@@ -1381,16 +1399,24 @@ function renderEmployeeProjectsView(container) {
                 <div class="card" style="cursor:pointer;" onclick="openProjectDetails('${p.id}')">
                     <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
                         <span class="badge" style="background:#dcfce7; color:#166534; font-size:11px; padding:4px 10px; border-radius:20px;">Participating</span>
+                        <span style="font-size:12px; font-weight:700; color:var(--primary-violet);">${p.progress || 0}% Complete</span>
                     </div>
                     <h3 style="margin-bottom:8px;">${p.name}</h3>
                     <p style="font-size:13px; color:var(--gray-600); margin-bottom:20px;">${p.description}</p>
+                    
+                    <div style="margin-bottom:20px;">
+                        <div class="line-progress-bg" style="margin-bottom:8px;">
+                            <div class="line-progress-fill" style="width: ${p.progress || 0}%"></div>
+                        </div>
+                    </div>
+
                     <div style="display:flex; align-items:center; gap:10px; border-top:1px solid #f3f4f6; padding-top:15px;">
                         <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(p.lead)}&background=8b5cf6&color=fff" style="width:32px; height:32px; border-radius:50%;">
                         <div style="flex:1;">
                             <p style="font-size:12px; font-weight:600;">${p.lead}</p>
                             <p style="font-size:11px; color:var(--gray-600);">Project Lead</p>
                         </div>
-                        <button class="btn btn-outline btn-xs" onclick="alert(\"Sending contact request to ${p.lead}\")">Contact Lead</button>
+                        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); alert('Sending contact request to ${p.lead}')">Contact Lead</button>
                     </div>
                 </div>
             `).join("")}
