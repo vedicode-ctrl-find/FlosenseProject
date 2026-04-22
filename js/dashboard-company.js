@@ -726,17 +726,17 @@ function getFilteredData(type) {
 // ── Renderers ──
 
 async function renderLeadOverview(container) {
-    // Show skeleton while loading
+    // Show premium skeleton while loading
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Organization Health</h2>
-            <p>Intelligence platform analyzing team capacity and delivery risk.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Organization Health</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Intelligence platform analyzing team capacity and delivery risk.</p>
         </div>
         <div class="stats-grid">
             ${[1,2,3,4].map(() => `
-                <div class="stat-card" style="opacity:0.5;">
-                    <div class="stat-icon violet"><i class="fas fa-spinner fa-spin"></i></div>
-                    <div><div class="stat-value">—</div><div class="stat-label">Loading...</div></div>
+                <div class="stat-card" style="opacity:0.6;">
+                    <div class="stat-icon violet" style="animation: pulse 2s infinite;"><i class="fas fa-spinner fa-spin"></i></div>
+                    <div><div class="stat-value" style="width:40px; height:24px; background:var(--gray-100); border-radius:4px;"></div><div class="stat-label">Syncing...</div></div>
                 </div>
             `).join('')}
         </div>`;
@@ -770,37 +770,37 @@ async function renderLeadOverview(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Organization Health</h2>
-            <p>Intelligence platform analyzing team capacity and delivery risk.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Organization Health</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Intelligence platform analyzing team capacity and delivery risk.</p>
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon violet"><i class="fas fa-project-diagram"></i></div>
                 <div>
                     <div class="stat-value">${projCount}</div>
-                    <div class="stat-label">Active Projects</div>
+                    <div class="stat-label">Active Streams</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                 <div>
                     <div class="stat-value">${empCount}</div>
-                    <div class="stat-label">Team Members</div>
+                    <div class="stat-label">Human Capital</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon green"><i class="fas fa-tasks"></i></div>
                 <div>
                     <div class="stat-value">${FlowSenseState.tasks.length}</div>
-                    <div class="stat-label">Live Tasks</div>
+                    <div class="stat-label">Active Tasks</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon amber"><i class="fas fa-exclamation-triangle"></i></div>
                 <div>
                     <div class="stat-value">${overloaded.length}</div>
-                    <div class="stat-label">Overload Alerts</div>
+                    <div class="stat-label">Critical Alerts</div>
                 </div>
             </div>
         </div>
@@ -990,16 +990,16 @@ async function renderTeamView(container) {
     }
 
     container.innerHTML = `
-        <div class="welcome-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="welcome-header" style="display:flex; justify-content:space-between; align-items:center;">
             <div>
-                <h2>Team Hub</h2>
-                <p>Managing <strong>${filtered.length}</strong> registered member${filtered.length !== 1 ? 's' : ''} in <strong>${companyName}</strong>.</p>
+                <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Team Hub</h2>
+                <p style="color: var(--gray-600); font-weight: 500;">Managing <strong>${filtered.length}</strong> registered members in the ecosystem.</p>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;background:#f5f3ff;border:1px solid #ddd6fe;padding:6px 14px;border-radius:20px;font-size:13px;color:#7c3aed;font-weight:600;">
-                <i class="fas fa-users"></i> ${filtered.length} Total Members
+            <div style="background:var(--surface-glass); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.4); padding:8px 18px; border-radius:100px; font-size:13px; color:var(--primary-violet); font-weight:800; box-shadow:var(--shadow-sm); display:flex; align-items:center; gap:10px;">
+                <i class="fas fa-users-viewfinder"></i> ${filtered.length} ACTIVE
             </div>
         </div>
-        <div class="team-grid">
+        <div class="team-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; margin-top: 32px;">
             ${filtered.map(e => renderTeamCard(e)).join('')}
         </div>
     `;
@@ -1008,42 +1008,42 @@ async function renderTeamView(container) {
 function renderTasksView(container) {
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Task Optimizer</h2>
-            <p>Smart task allocation engine.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Task Optimizer</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Smart task allocation engine with real-time overload detection.</p>
         </div>
 
-        <div class="dashboard-grid" style="grid-template-columns: 350px 1fr;">
-            <div class="card">
-                <h3 style="margin-bottom:20px;">New Assignment</h3>
+        <div class="dashboard-grid" style="grid-template-columns: 350px 1fr; gap: 32px; align-items: start;">
+            <div class="card hover-lift" style="padding: 28px; background: rgba(255,255,255,0.5);">
+                <h3 style="margin-bottom:24px; font-size:18px; font-weight:800; color:var(--gray-900);">New Assignment</h3>
                 <form onsubmit="handleTaskAssignment(event)">
                     <div class="form-group">
-                        <label>Task Name</label>
-                        <input type="text" id="t-name" class="styled-input" placeholder="e.g. Design System" required style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;">
+                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Task Name</label>
+                        <input type="text" id="t-name" class="styled-input" placeholder="e.g. Design System" required style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none; transition:all 0.3s;">
                     </div>
                     <div class="form-group">
-                        <label>Hours Required</label>
-                        <input type="number" id="t-hours" class="styled-input" value="10" required style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;">
+                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Hours Required</label>
+                        <input type="number" id="t-hours" class="styled-input" value="10" required style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none; transition:all 0.3s;">
                     </div>
                     <div class="form-group">
-                        <label>Project</label>
-                        <select id="t-project" class="styled-input" style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;">
+                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Project</label>
+                        <select id="t-project" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none; transition:all 0.3s;">
                             ${FlowSenseState.projects.map(p => `<option>${p.name}</option>`).join('')}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Assignee</label>
-                        <select id="t-assignee" class="styled-input" style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;" onchange="checkTaskOverload(this.value)">
+                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Assignee</label>
+                        <select id="t-assignee" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:24px; font-weight:600; outline:none; transition:all 0.3s;" onchange="checkTaskOverload(this.value)">
                             ${FlowSenseState.employees.map(e => `<option value="${e.id}">${e.name} (${Math.round(e.workload)}%)</option>`).join('')}
                         </select>
                     </div>
                     <div id="smart-alert-container"></div>
-                    <button class="btn btn-primary" style="margin-top:10px;">Assign Task</button>
+                    <button class="btn btn-primary" style="margin-top:10px; width:100%; padding:14px; font-size:14px; border-radius:14px;">Assign Task</button>
                 </form>
             </div>
 
-            <div class="card" style="padding:0;">
-                <div style="padding:20px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0;">Pending Tasks</h3>
+            <div class="card hover-lift" style="padding:0; overflow:hidden;">
+                <div style="padding:24px 28px; background:rgba(255,255,255,0.6); border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="margin:0; font-size:18px; font-weight:800; color:var(--gray-900);">Pending Tasks</h3>
                 </div>
                 <div style="padding:10px 20px;">
                     ${FlowSenseState.tasks.map(t => {
@@ -1059,69 +1059,45 @@ function renderTasksView(container) {
 // ── Shared UI Renderers ──
 
 function renderTeamCard(e) {
-    // Support both DB shape (_id, workload_percentage) and mock shape (id, workload)
-    const workload    = e.workload_percentage !== undefined ? e.workload_percentage : (e.workload || 0);
-    const empId       = e._id || e.id || '';
-    const empIdLabel  = e.employee_id || '';
-
+    const workload = e.workload_percentage !== undefined ? e.workload_percentage : (e.workload || 0);
     const statusColor = workload > 100 ? '#ef4444' : (workload < 70 ? '#3b82f6' : '#10b981');
     const statusLabel = workload > 100 ? 'Overloaded' : (workload < 70 ? 'Available' : 'Balanced');
-    const statusType  = workload > 100 ? 'busy' : 'online';
-
-    const skills      = e.skills || [];
-    const skillTags   = skills.length > 0
-        ? skills.map(s => `<span class="team-skill-tag">${s}</span>`).join('')
-        : '<span style="color:var(--gray-400);font-size:12px;">No skills listed</span>';
-
-    // For DB employees we don\'t have project-task mapping live yet — show employee_id badge instead
-    const metaBadge   = empIdLabel
-        ? `<span class="team-project-badge" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;">${empIdLabel}</span>`
-        : '<span style="color:var(--gray-400);font-size:12px;">ID not assigned</span>';
-
-    const efficiency  = e.efficiency !== undefined ? e.efficiency : 100;
-
-    // Avatar color based on role
-    const avatarBg    = workload > 100 ? 'ef4444' : workload < 70 ? '3b82f6' : '8b5cf6';
+    const avatarBg = workload > 100 ? 'ef4444' : workload < 70 ? '3b82f6' : '8b5cf6';
 
     return `
-        <div class="team-card">
-            <div class="team-card-header">
-                <div class="team-card-avatar-wrapper">
-                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=${avatarBg}&color=fff" class="team-card-avatar" alt="${e.name}">
-                    <div class="status-indicator ${statusType}"></div>
-                </div>
-                <div class="team-card-meta">
-                    <h3>${e.name}</h3>
-                    <span class="team-card-role">${e.role}</span>
-                </div>
+    <div class="team-card hover-lift" style="background:var(--surface-glass); backdrop-filter:blur(12px); border-radius:var(--radius-lg); border:1px solid rgba(255,255,255,0.6); box-shadow:var(--shadow-premium); overflow:hidden; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+        <div class="team-card-header" style="padding:24px; display:flex; align-items:center; gap:16px; border-bottom:1px solid var(--gray-50);">
+            <div style="position:relative;">
+                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=${avatarBg}&color=fff" 
+                     style="width:56px; height:56px; border-radius:16px; object-fit:cover; border:2px solid white; box-shadow:var(--shadow-sm);">
+                <div style="position:absolute; bottom:-2px; right:-2px; width:14px; height:14px; border-radius:50%; background:${statusColor}; border:2px solid white;"></div>
             </div>
-
-            <div class="team-card-section">
-                <span class="team-card-label">Core Skills</span>
-                <div class="team-skill-tags">${skillTags}</div>
-            </div>
-
-            <div class="team-card-section">
-                <span class="team-card-label">Employee ID</span>
-                <div class="team-project-badges">${metaBadge}</div>
-            </div>
-
-            <div class="team-card-footer">
-                <div class="workload-visual">
-                    <div class="workload-meta">
-                        <span>Workload</span>
-                        <span class="workload-status-text" style="color:${statusColor}">${Math.round(workload)}% — ${statusLabel}</span>
-                    </div>
-                    <div class="workload-bar-bg">
-                        <div class="workload-bar-fill" style="width:${Math.min(workload, 100)}%; background:${statusColor}"></div>
-                    </div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9;">
-                    <span style="font-size:11px;color:var(--gray-600);">Efficiency</span>
-                    <span style="font-size:12px;font-weight:700;color:#8b5cf6;">${efficiency}%</span>
-                </div>
+            <div style="flex:1;">
+                <h4 style="font-size:16px; font-weight:800; color:var(--gray-900); letter-spacing:-0.5px; margin:0;">${e.name}</h4>
+                <p style="font-size:11px; color:var(--gray-500); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin:2px 0 0;">${e.role}</p>
             </div>
         </div>
+        <div class="team-card-body" style="padding:20px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:11px; font-weight:700;">
+                <span style="color:var(--gray-400);">UTILIZATION</span>
+                <span style="color:${statusColor}">${workload}%</span>
+            </div>
+            <div style="height:6px; background:var(--gray-100); border-radius:10px; overflow:hidden; margin-bottom:20px;">
+                <div style="width:${Math.min(workload, 100)}%; background:${statusColor}; height:100%; border-radius:10px; transition: width 1s ease;"></div>
+            </div>
+            
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                ${(e.skills || []).slice(0, 3).map(s => `
+                    <span style="background:rgba(139, 92, 246, 0.05); color:var(--primary-violet); font-size:10px; padding:3px 8px; border-radius:6px; font-weight:700; border:1px solid rgba(139, 92, 246, 0.1);">${s}</span>
+                `).join('')}
+                ${(e.skills || []).length > 3 ? `<span style="font-size:10px; color:var(--gray-400); font-weight:600;">+${e.skills.length - 3}</span>` : ''}
+            </div>
+        </div>
+        <div style="padding:16px 20px; background:rgba(255,255,255,0.3); border-top:1px solid var(--gray-50); display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:11px; font-weight:700; color:var(--gray-500);">${statusLabel}</span>
+            <button class="btn-primary" style="padding:5px 12px; font-size:10px; border-radius:6px; font-weight:800; letter-spacing:0.5px;" onclick="selectDirectChat('${e._id || e.id}', '${e.name.replace(/'/g, "\\'")}')">MESSAGE</button>
+        </div>
+    </div>
     `;
 }
 
@@ -1484,6 +1460,14 @@ function renderInsightsDashboard(container, members, tasks) {
     // Destroy existing charts if they exist
     Object.values(insightsCharts).forEach(chart => { if(chart) chart.destroy(); });
 
+    // Helper: Create Gradient
+    const createGradient = (ctx, colorStart, colorEnd) => {
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, colorStart);
+        gradient.addColorStop(1, colorEnd);
+        return gradient;
+    };
+
     // Workload Chart
     const ctxWl = document.getElementById('workloadChart').getContext('2d');
     insightsCharts.workload = new Chart(ctxWl, {
@@ -1494,29 +1478,48 @@ function renderInsightsDashboard(container, members, tasks) {
                 label: 'Workload (%)',
                 data: workloadData.map(d => d.percentage),
                 backgroundColor: workloadData.map(d => {
-                    if (d.percentage > 120) return '#ef4444'; // Overloaded
-                    if (d.percentage >= 80) return '#f59e0b'; // Balanced/Busy
-                    return '#10b981'; // Free/Available
+                    if (d.percentage > 120) return createGradient(ctxWl, '#ef4444', '#b91c1c');
+                    if (d.percentage >= 80) return createGradient(ctxWl, '#f59e0b', '#d97706');
+                    return createGradient(ctxWl, '#10b981', '#059669');
                 }),
-                borderRadius: 8,
-                barThickness: 30
+                borderRadius: 12,
+                barThickness: 28,
+                hoverBackgroundColor: '#8b5cf6'
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: {
+                duration: 2000,
+                easing: 'easeOutQuart'
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    titleFont: { size: 13, weight: 'bold' },
+                    bodyFont: { size: 12 },
+                    padding: 12,
+                    cornerRadius: 12,
+                    displayColors: false,
                     callbacks: {
-                        label: (context) => `Workload: ${context.raw}%`,
-                        afterLabel: () => 'Includes tasks from current project'
+                        label: (context) => `Workload Intensity: ${context.raw}%`,
+                        afterLabel: () => 'System optimized resource allocation'
                     }
                 }
             },
             scales: {
-                y: { beginAtZero: true, max: Math.max(150, ...workloadData.map(d => d.percentage + 20)), grid: { display: false } },
-                x: { grid: { display: false } }
+                y: { 
+                    beginAtZero: true, 
+                    max: Math.max(150, ...workloadData.map(d => d.percentage + 20)), 
+                    grid: { color: 'rgba(0,0,0,0.03)', drawBorder: false },
+                    ticks: { font: { weight: '600' }, color: '#94a3b8' }
+                },
+                x: { 
+                    grid: { display: false },
+                    ticks: { font: { weight: '600' }, color: '#64748b' }
+                }
             }
         }
     });
@@ -1529,18 +1532,31 @@ function renderInsightsDashboard(container, members, tasks) {
             labels: ['To Do', 'In Progress', 'Testing', 'Done'],
             datasets: [{
                 data: [statusCounts['Pending'], statusCounts['In Progress'], statusCounts['Testing'], statusCounts['Completed']],
-                backgroundColor: ['#3b82f6', '#f59e0b', '#f97316', '#10b981'],
+                backgroundColor: [
+                    createGradient(ctxSt, '#3b82f6', '#1d4ed8'),
+                    createGradient(ctxSt, '#f59e0b', '#d97706'),
+                    createGradient(ctxSt, '#f97316', '#c2410c'),
+                    createGradient(ctxSt, '#10b981', '#047857')
+                ],
                 borderWidth: 0,
-                hoverOffset: 10
+                hoverOffset: 15,
+                borderRadius: 4
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            cutout: '70%',
+            cutout: '75%',
+            animation: { animateRotate: true, animateScale: true, duration: 1500 },
             plugins: {
-                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } },
+                legend: { 
+                    position: 'bottom', 
+                    labels: { usePointStyle: true, padding: 25, font: { weight: '600', size: 12 } } 
+                },
                 tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    padding: 12,
+                    cornerRadius: 12,
                     callbacks: {
                         label: (context) => {
                             const total = context.dataset.data.reduce((a, b) => a + b, 0);
@@ -1556,16 +1572,21 @@ function renderInsightsDashboard(container, members, tasks) {
 
     // Performance Chart
     const ctxPerf = document.getElementById('performanceChart').getContext('2d');
+    const perfGradient = ctxPerf.createLinearGradient(0, 0, 400, 0);
+    perfGradient.addColorStop(0, '#8b5cf6');
+    perfGradient.addColorStop(1, '#7c3aed');
+
     insightsCharts.performance = new Chart(ctxPerf, {
         type: 'bar',
         data: {
             labels: performanceData.map(d => d.name),
             datasets: [{
-                label: 'Performance Efficiency (%)',
+                label: 'Efficiency (%)',
                 data: performanceData.map(d => d.percentage),
-                backgroundColor: '#8b5cf6',
-                borderRadius: 8,
-                barThickness: 40
+                backgroundColor: perfGradient,
+                borderRadius: 12,
+                barThickness: 32,
+                hoverBackgroundColor: '#6d28d9'
             }]
         },
         options: {
@@ -1573,11 +1594,24 @@ function renderInsightsDashboard(container, members, tasks) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false }
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    padding: 12,
+                    cornerRadius: 12
+                }
             },
             scales: {
-                x: { beginAtZero: true, max: 100, grid: { display: false } },
-                y: { grid: { display: false } }
+                x: { 
+                    beginAtZero: true, 
+                    max: 100, 
+                    grid: { color: 'rgba(0,0,0,0.03)', drawBorder: false },
+                    ticks: { font: { weight: '600' }, color: '#94a3b8' }
+                },
+                y: { 
+                    grid: { display: false },
+                    ticks: { font: { weight: '600' }, color: '#64748b' }
+                }
             }
         }
     });

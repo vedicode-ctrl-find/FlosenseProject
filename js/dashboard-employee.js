@@ -12,6 +12,10 @@ let FlowSenseState = {
     userProfile: {}  // Cached for settings population
 };
 
+let FlowSenseNotifications = []; 
+let notificationFilter = 'all';
+let expandedNotifId = null;
+
 // ── Live DB Data Store (populated from API) ──
 let liveData = {
     employees: [],   // Real employees from MongoDB
@@ -392,6 +396,7 @@ function loadView(view) {
     FlowSenseState.currentView = view;
     renderCurrentView();
 }
+window.loadView = loadView;
 
 let currentProjectTasks = [];
 
@@ -1219,17 +1224,17 @@ function getFilteredData(type) {
 // ── Renderers ──
 
 async function renderLeadOverview(container) {
-    // Show skeleton while loading
+    // Show premium skeleton while loading
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Organization Health</h2>
-            <p>Intelligence platform analyzing team capacity and delivery risk.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Organization Health</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Intelligence platform analyzing team capacity and delivery risk.</p>
         </div>
         <div class="stats-grid">
             ${[1,2,3,4].map(() => `
-                <div class="stat-card" style="opacity:0.5;">
-                    <div class="stat-icon violet"><i class="fas fa-spinner fa-spin"></i></div>
-                    <div><div class="stat-value">—</div><div class="stat-label">Loading...</div></div>
+                <div class="stat-card" style="opacity:0.6;">
+                    <div class="stat-icon violet" style="animation: pulse 2s infinite;"><i class="fas fa-spinner fa-spin"></i></div>
+                    <div><div class="stat-value" style="width:40px; height:24px; background:var(--gray-100); border-radius:4px;"></div><div class="stat-label">Syncing...</div></div>
                 </div>
             `).join('')}
         </div>`;
@@ -1241,59 +1246,43 @@ async function renderLeadOverview(container) {
     const empCount       = employees.length;
     const projCount      = projects.length;
 
-    // Build workload distribution from live employees
-    const workloadItems = employees.length > 0
-        ? employees.map(e => {
-            const wl     = e.workload_percentage || 0;
-            const status = wl > 100 ? 'overloaded' : wl >= 80 ? 'balanced' : 'underutilized';
-            return renderWorkloadItem(e.name, wl, status);
-          }).join('')
-        : '<p style="font-size:13px;color:var(--gray-600);text-align:center;padding:20px 0;">No employees registered yet.</p>';
-
-    // Smart suggestions from live data
-    const overloadedEmp    = employees.find(e => (e.workload_percentage || 0) > 100);
-    const underutilizedEmp = employees.find(e => (e.workload_percentage || 0) < 60);
-    const suggestionHTML = (overloadedEmp && underutilizedEmp)
-        ? `<div class="suggestion-card">
-                <h4><i class="fas fa-bolt"></i> Rebalance Alert</h4>
-                <p><strong>${overloadedEmp.name}</strong> is at <strong>${Math.round(overloadedEmp.workload_percentage)}%</strong> capacity.
-                   Suggested: Move a task to <strong>${underutilizedEmp.name}</strong> (${Math.round(underutilizedEmp.workload_percentage || 0)}% workload).</p>
-           </div>`
-        : `<p style="font-size:13px; color:var(--gray-600); text-align:center; margin-top:20px;">Team is balanced. No optimization needed.</p>`;
+    // Calculate missing UI components
+    const workloadItems = employees.slice(0, 5).map(e => renderWorkloadItem(e.name, e.workload_percentage || 0, (e.workload_percentage || 0) > 100 ? 'overloaded' : 'balanced')).join('');
+    const suggestionHTML = renderRealSuggestions();
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Organization Health</h2>
-            <p>Intelligence platform analyzing team capacity and delivery risk.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Organization Health</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Intelligence platform analyzing team capacity and delivery risk.</p>
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon violet"><i class="fas fa-project-diagram"></i></div>
                 <div>
                     <div class="stat-value">${projCount}</div>
-                    <div class="stat-label">Active Projects</div>
+                    <div class="stat-label">Active Streams</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                 <div>
                     <div class="stat-value">${empCount}</div>
-                    <div class="stat-label">Team Members</div>
+                    <div class="stat-label">Human Capital</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon green"><i class="fas fa-tasks"></i></div>
                 <div>
                     <div class="stat-value">${FlowSenseState.tasks.length}</div>
-                    <div class="stat-label">Live Tasks</div>
+                    <div class="stat-label">Active Tasks</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon amber"><i class="fas fa-exclamation-triangle"></i></div>
                 <div>
                     <div class="stat-value">${overloaded.length}</div>
-                    <div class="stat-label">Overload Alerts</div>
+                    <div class="stat-label">Critical Alerts</div>
                 </div>
             </div>
         </div>
@@ -1495,16 +1484,16 @@ async function renderTeamView(container) {
     }
 
     container.innerHTML = `
-        <div class="welcome-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="welcome-header" style="display:flex; justify-content:space-between; align-items:center;">
             <div>
-                <h2>Team Hub</h2>
-                <p>Managing <strong>${filtered.length}</strong> registered member${filtered.length !== 1 ? 's' : ''} in <strong>${companyName}</strong>.</p>
+                <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Team Hub</h2>
+                <p style="color: var(--gray-600); font-weight: 500;">Managing <strong>${filtered.length}</strong> registered members in the ecosystem.</p>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;background:#f5f3ff;border:1px solid #ddd6fe;padding:6px 14px;border-radius:20px;font-size:13px;color:#7c3aed;font-weight:600;">
-                <i class="fas fa-users"></i> ${filtered.length} Total Members
+            <div style="background:var(--surface-glass); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.4); padding:8px 18px; border-radius:100px; font-size:13px; color:var(--primary-violet); font-weight:800; box-shadow:var(--shadow-sm); display:flex; align-items:center; gap:10px;">
+                <i class="fas fa-users-viewfinder"></i> ${filtered.length} ACTIVE
             </div>
         </div>
-        <div class="team-grid">
+        <div class="team-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; margin-top: 32px;">
             ${filtered.map(e => renderTeamCard(e)).join('')}
         </div>
     `;
@@ -1564,69 +1553,45 @@ function renderTasksView(container) {
 // ── Shared UI Renderers ──
 
 function renderTeamCard(e) {
-    // Support both DB shape (_id, workload_percentage) and mock shape (id, workload)
-    const workload    = e.workload_percentage !== undefined ? e.workload_percentage : (e.workload || 0);
-    const empId       = e._id || e.id || '';
-    const empIdLabel  = e.employee_id || '';
-
+    const workload = e.workload_percentage !== undefined ? e.workload_percentage : (e.workload || 0);
     const statusColor = workload > 100 ? '#ef4444' : (workload < 70 ? '#3b82f6' : '#10b981');
     const statusLabel = workload > 100 ? 'Overloaded' : (workload < 70 ? 'Available' : 'Balanced');
-    const statusType  = workload > 100 ? 'busy' : 'online';
-
-    const skills      = e.skills || [];
-    const skillTags   = skills.length > 0
-        ? skills.map(s => `<span class="team-skill-tag">${s}</span>`).join('')
-        : '<span style="color:var(--gray-400);font-size:12px;">No skills listed</span>';
-
-    // For DB employees we don\'t have project-task mapping live yet — show employee_id badge instead
-    const metaBadge   = empIdLabel
-        ? `<span class="team-project-badge" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;">${empIdLabel}</span>`
-        : '<span style="color:var(--gray-400);font-size:12px;">ID not assigned</span>';
-
-    const efficiency  = e.efficiency !== undefined ? e.efficiency : 100;
-
-    // Avatar color based on role
-    const avatarBg    = workload > 100 ? 'ef4444' : workload < 70 ? '3b82f6' : '8b5cf6';
+    const avatarBg = workload > 100 ? 'ef4444' : workload < 70 ? '3b82f6' : '8b5cf6';
 
     return `
-        <div class="team-card">
-            <div class="team-card-header">
-                <div class="team-card-avatar-wrapper">
-                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=${avatarBg}&color=fff" class="team-card-avatar" alt="${e.name}">
-                    <div class="status-indicator ${statusType}"></div>
-                </div>
-                <div class="team-card-meta">
-                    <h3>${e.name}</h3>
-                    <span class="team-card-role">${e.role}</span>
-                </div>
+    <div class="team-card hover-lift" style="background:var(--surface-glass); backdrop-filter:blur(12px); border-radius:var(--radius-lg); border:1px solid rgba(255,255,255,0.6); box-shadow:var(--shadow-premium); overflow:hidden; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+        <div class="team-card-header" style="padding:24px; display:flex; align-items:center; gap:16px; border-bottom:1px solid var(--gray-50);">
+            <div style="position:relative;">
+                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(e.name)}&background=${avatarBg}&color=fff" 
+                     style="width:56px; height:56px; border-radius:16px; object-fit:cover; border:2px solid white; box-shadow:var(--shadow-sm);">
+                <div style="position:absolute; bottom:-2px; right:-2px; width:14px; height:14px; border-radius:50%; background:${statusColor}; border:2px solid white;"></div>
             </div>
-
-            <div class="team-card-section">
-                <span class="team-card-label">Core Skills</span>
-                <div class="team-skill-tags">${skillTags}</div>
-            </div>
-
-            <div class="team-card-section">
-                <span class="team-card-label">Employee ID</span>
-                <div class="team-project-badges">${metaBadge}</div>
-            </div>
-
-            <div class="team-card-footer">
-                <div class="workload-visual">
-                    <div class="workload-meta">
-                        <span>Workload</span>
-                        <span class="workload-status-text" style="color:${statusColor}">${Math.round(workload)}% — ${statusLabel}</span>
-                    </div>
-                    <div class="workload-bar-bg">
-                        <div class="workload-bar-fill" style="width:${Math.min(workload, 100)}%; background:${statusColor}"></div>
-                    </div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9;">
-                    <span style="font-size:11px;color:var(--gray-600);">Efficiency</span>
-                    <span style="font-size:12px;font-weight:700;color:#8b5cf6;">${efficiency}%</span>
-                </div>
+            <div style="flex:1;">
+                <h4 style="font-size:16px; font-weight:800; color:var(--gray-900); letter-spacing:-0.5px; margin:0;">${e.name}</h4>
+                <p style="font-size:11px; color:var(--gray-500); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin:2px 0 0;">${e.role}</p>
             </div>
         </div>
+        <div class="team-card-body" style="padding:20px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:11px; font-weight:700;">
+                <span style="color:var(--gray-400);">UTILIZATION</span>
+                <span style="color:${statusColor}">${Math.round(workload)}%</span>
+            </div>
+            <div style="height:6px; background:var(--gray-100); border-radius:10px; overflow:hidden; margin-bottom:20px;">
+                <div style="width:${Math.min(workload, 100)}%; background:${statusColor}; height:100%; border-radius:10px; transition: width 1s ease;"></div>
+            </div>
+            
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                ${(e.skills || []).slice(0, 3).map(s => `
+                    <span style="background:rgba(139, 92, 246, 0.05); color:var(--primary-violet); font-size:10px; padding:3px 8px; border-radius:6px; font-weight:700; border:1px solid rgba(139, 92, 246, 0.1);">${s}</span>
+                `).join('')}
+                ${(e.skills || []).length > 3 ? `<span style="font-size:10px; color:var(--gray-400); font-weight:600;">+${e.skills.length - 3}</span>` : ''}
+            </div>
+        </div>
+        <div style="padding:16px 20px; background:rgba(255,255,255,0.3); border-top:1px solid var(--gray-50); display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:11px; font-weight:700; color:var(--gray-500);">${statusLabel}</span>
+            <button class="btn-primary" style="padding:5px 12px; font-size:10px; border-radius:6px; font-weight:800; letter-spacing:0.5px;" onclick="selectDirectChat('${e._id || e.id}', '${e.name.replace(/'/g, "\\'")}')">MESSAGE</button>
+        </div>
+    </div>
     `;
 }
 
@@ -2001,7 +1966,7 @@ function renderEmployeeOverview(container) {
     const completedCount = myTasks.filter(t => t.status === 'Completed').length;
     const myWorkload = Math.round(myTasks.reduce((acc, curr) => acc + ((curr.hours || 0) * 2.5), 0));
 
-    // Project Participation: always show ALL projects the user is assigned to (not context-filtered)
+    // Project Participation
     const allProjects = liveData.projects.length > 0 ? liveData.projects : FlowSenseState.projects;
     const myProjects = allProjects.filter(p => {
         const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
@@ -2013,37 +1978,37 @@ function renderEmployeeOverview(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Dashboard</h2>
-            <p>Welcome back, <strong>${name}</strong>. You are participating in <strong>${myProjects.length}</strong> project${myProjects.length !== 1 ? 's' : ''} with <strong>${myTasks.length}</strong> active task${myTasks.length !== 1 ? 's' : ''}.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Hello, ${name}</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Welcome back. You have <strong>${myTasks.length}</strong> active tasks across <strong>${myProjects.length}</strong> project streams.</p>
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon violet"><i class="fas fa-clipboard-check"></i></div>
                 <div>
                     <div class="stat-value">${myTasks.length}</div>
-                    <div class="stat-label">Assigned Tasks</div>
+                    <div class="stat-label">Active Tasks</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
                 <div>
                     <div class="stat-value">${completedCount}</div>
-                    <div class="stat-label">Completed</div>
+                    <div class="stat-label">Tasks Completed</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon blue"><i class="fas fa-project-diagram"></i></div>
                 <div>
                     <div class="stat-value">${myProjects.length}</div>
-                    <div class="stat-label">Active Projects</div>
+                    <div class="stat-label">Project Streams</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card hover-lift">
                 <div class="stat-icon amber"><i class="fas fa-tachometer-alt"></i></div>
                 <div>
                     <div class="stat-value">${Math.min(myWorkload, 999)}%</div>
-                    <div class="stat-label">Workload</div>
+                    <div class="stat-label">Current Load</div>
                 </div>
             </div>
         </div>
@@ -2077,7 +2042,7 @@ function renderEmployeeOverview(container) {
                             return `
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f8fafc;">
                                 <div>
-                                    <p style="font-weight:600; font-size:14px;">${p.name}${isLead ? ' <span style="font-size:10px;color:#8b5cf6;background:#f3e8ff;padding:2px 6px;border-radius:8px;margin-left:4px;"><i class=\\"fas fa-crown\\"></i> Lead</span>' : ''}</p>
+                                    <p style="font-weight:600; font-size:14px;">${p.name}${isLead ? ' <span style="font-size:10px;color:#8b5cf6;background:#f3e8ff;padding:2px 6px;border-radius:8px;margin-left:4px;"><i class="fas fa-crown"></i> Lead</span>' : ''}</p>
                                     <p style="font-size:12px; color:var(--gray-600);">${leadName} (Project Lead)</p>
                                 </div>
                                 <span style="background:#f3f4f6; color:var(--gray-600); font-size:11px; padding:4px 10px; border-radius:20px; font-weight:600;">${p.status || 'Active'}</span>
@@ -2092,10 +2057,6 @@ function renderEmployeeOverview(container) {
 
 function renderEmployeeProjectsView(container) {
     const userId = localStorage.getItem("userId");
-    
-    // IMPORTANT: "My Projects" always shows ALL projects the user belongs to.
-    // We intentionally do NOT apply the global context filter here — that would
-    // hide projects for users assigned to multiple streams simultaneously.
     const allProjects = liveData.projects.length > 0 ? liveData.projects : FlowSenseState.projects;
     const myProjects = allProjects.filter(p => {
         const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
@@ -2108,7 +2069,7 @@ function renderEmployeeProjectsView(container) {
     if (myProjects.length === 0) {
         container.innerHTML = `
         <div class="welcome-header">
-            <h2>My Projects</h2>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">My Projects</h2>
             <p style="color: var(--primary-violet); font-weight: 500;">You haven't been assigned to any projects yet. Contact your Company Lead to get started.</p>
         </div>`;
         return;
@@ -2116,186 +2077,56 @@ function renderEmployeeProjectsView(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>My Projects</h2>
-            <p>You are participating in <strong>${myProjects.length}</strong> active initiatives.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">My Projects</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">You are participating in <strong>${myProjects.length}</strong> active initiatives.</p>
         </div>
         
-        <div class="projects-grid">
+        <div class="projects-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 24px; margin-top: 32px;">
             ${myProjects.map(p => {
                 const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
                 const leadEmployee = liveData.employees.find(e => String(e._id || e.id) === String(leadId));
-                const leadName = leadEmployee ? leadEmployee.name : 'Unknown';
+                const leadName = leadEmployee ? leadEmployee.name : 'Principal Lead';
                 const isLead = String(leadId) === String(userId);
+                const statusColor = p.status === 'In Progress' ? '#8b5cf6' : (p.status === 'Completed' ? '#10b981' : '#64748b');
 
                 return `
-                <div class="project-card-premium" onclick="openProjectDetails('${p._id || p.id}')">
-                    <div class="card-header-top">
-                        <span class="status-indicator status-${p.status.toLowerCase().replace(' ', '-')}">${p.status}</span>
-                        ${isLead ? '<span class="lead-badge"><i class="fas fa-crown"></i> Lead</span>' : ''}
-                    </div>
-                    
-                    <h3 class="card-title">${p.name}</h3>
-                    <p class="card-desc">${p.description || 'Secure project data stream.'}</p>
-                    
-                    <div class="card-progress-zone">
-                        <div class="progress-info">
-                            <span>Completion</span>
-                            <span>${p.progress}%</span>
+                <div class="card hover-lift" style="padding:0; overflow:hidden; display:flex; flex-direction:column;" onclick="openProjectDetails('${p._id || p.id}')">
+                    <div style="padding:24px; flex:1;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                            <span style="font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; background:${statusColor}15; color:${statusColor}; padding:4px 12px; border-radius:100px; border:1px solid ${statusColor}30;">${p.status}</span>
+                            ${isLead ? '<span style="font-size:10px; font-weight:800; color:#f59e0b; background:#fef3c7; padding:4px 10px; border-radius:100px;"><i class="fas fa-crown"></i> LEAD</span>' : ''}
                         </div>
-                        <div class="mini-progress-track">
-                            <div class="mini-progress-fill" style="width: ${p.progress}%"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="card-footer-meta">
-                        <div class="lead-meta">
-                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(leadName)}&background=8b5cf6&color=fff" class="mini-avatar">
-                            <div class="lead-text-box">
-                                <span class="lead-label">Lead</span>
-                                <span class="lead-name">${leadName}</span>
+                        <h3 style="font-size:19px; font-weight:800; color:var(--gray-900); margin-bottom:8px; letter-spacing:-0.5px;">${p.name}</h3>
+                        <p style="font-size:13px; color:var(--gray-500); line-height:1.5; margin-bottom:24px;">${p.description || 'Secure project data stream.'}</p>
+                        
+                        <div style="margin-bottom:20px;">
+                            <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:8px;">
+                                <span style="color:var(--gray-400);">PROGRESS</span>
+                                <span style="color:var(--primary-violet);">${p.progress}%</span>
+                            </div>
+                            <div style="height:6px; background:var(--gray-100); border-radius:10px; overflow:hidden;">
+                                <div style="width: ${p.progress}%; height:100%; background:var(--violet-gradient); border-radius:10px; transition: width 1s ease;"></div>
                             </div>
                         </div>
-                        <div class="deadline-meta">
-                            <span class="meta-label">Deadline</span>
-                            <span class="meta-date">${new Date(p.deadline).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
+                    </div>
+                    
+                    <div style="padding:16px 24px; background:rgba(255,255,255,0.4); border-top:1px solid var(--gray-50); display:flex; justify-content:space-between; align-items:center;">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(leadName)}&background=8b5cf6&color=fff" style="width:28px; height:28px; border-radius:8px;">
+                            <div style="display:flex; flex-direction:column;">
+                                <span style="font-size:9px; font-weight:800; color:var(--gray-400); text-transform:uppercase;">Lead</span>
+                                <span style="font-size:11px; font-weight:700; color:var(--gray-700);">${leadName}</span>
+                            </div>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="display:block; font-size:9px; font-weight:800; color:var(--gray-400); text-transform:uppercase;">Deadline</span>
+                            <span style="font-size:11px; font-weight:700; color:var(--gray-700);">${new Date(p.deadline).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
                         </div>
                     </div>
                 </div>
                 `;
             }).join("")}
         </div>
-
-        <style>
-            .projects-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-                gap: 25px;
-                margin-top: 30px;
-            }
-            .project-card-premium {
-                background: white;
-                border-radius: var(--radius-lg);
-                padding: 24px;
-                border: 1px solid var(--gray-100);
-                box-shadow: var(--shadow-sm);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                cursor: pointer;
-                position: relative;
-                overflow: hidden;
-            }
-            .project-card-premium:hover {
-                transform: translateY(-5px);
-                box-shadow: var(--shadow-lg);
-                border-color: var(--primary-violet);
-            }
-            .card-header-top {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 16px;
-            }
-            .status-indicator {
-                font-size: 10px;
-                font-weight: 800;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                padding: 4px 10px;
-                border-radius: 100px;
-            }
-            .status-active { background: #dcfce7; color: #166534; }
-            .status-planning { background: #f3e8ff; color: #6b21a8; }
-            .status-on-hold { background: #fef3c7; color: #92400e; }
-            
-            .lead-badge {
-                font-size: 10px;
-                font-weight: 700;
-                color: var(--primary-violet);
-                background: var(--primary-light-purple);
-                padding: 4px 10px;
-                border-radius: 100px;
-            }
-            .card-title {
-                font-size: 20px;
-                font-weight: 700;
-                color: var(--gray-900);
-                margin-bottom: 8px;
-            }
-            .card-desc {
-                font-size: 14px;
-                color: var(--gray-600);
-                margin-bottom: 20px;
-                display: -webkit-box;
-                -webkit-line-clamp: 2;
-                -webkit-box-orient: vertical;
-                overflow: hidden;
-                line-height: 1.5;
-            }
-            .card-progress-zone {
-                margin-bottom: 20px;
-            }
-            .progress-info {
-                display: flex;
-                justify-content: space-between;
-                font-size: 12px;
-                font-weight: 600;
-                margin-bottom: 8px;
-            }
-            .mini-progress-track {
-                height: 6px;
-                background: var(--gray-100);
-                border-radius: 100px;
-                overflow: hidden;
-            }
-            .mini-progress-fill {
-                height: 100%;
-                background: var(--violet-gradient);
-                border-radius: 100px;
-            }
-            .card-footer-meta {
-                padding-top: 16px;
-                border-top: 1px solid var(--gray-50);
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .lead-meta {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-            .mini-avatar {
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                border: 2px solid white;
-                box-shadow: var(--shadow-sm);
-            }
-            .lead-text-box {
-                display: flex;
-                flex-direction: column;
-            }
-            .lead-label {
-                font-size: 9px;
-                font-weight: 600;
-                color: var(--gray-400);
-                text-transform: uppercase;
-            }
-            .lead-name {
-                font-size: 13px;
-                font-weight: 700;
-                color: var(--gray-900);
-            }
-            .deadline-meta {
-                display: flex;
-                flex-direction: column;
-                align-items: flex-end;
-            }
-            .meta-date {
-                font-size: 13px;
-                font-weight: 700;
-                color: var(--gray-900);
-            }
-        </style>
     `;
 }
 
@@ -2311,93 +2142,80 @@ function renderEmployeeTasksView(container) {
 
     const selectedPid = FlowSenseState.globalSelectedProjectId;
 
+    // Determine Stream Eligibility
+    const allProjects = liveData.projects.length > 0 ? liveData.projects : FlowSenseState.projects;
+    const streamProjectsForLead = allProjects.filter(p => String(p.team_lead?._id || p.team_lead?.id || p.team_lead) === String(userId));
+    const streamProjectsForMember = allProjects.filter(p => {
+        const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
+        const isMember = teamMembers.some(m => String(m._id || m.id || m) === String(userId));
+        const isLead = String(p.team_lead?._id || p.team_lead?.id || p.team_lead) === String(userId);
+        return isMember && !isLead;
+    });
+
+    const isTeamLead = streamProjectsForLead.length > 0;
+    const hasStreamContent = isTeamLead || streamProjectsForMember.length > 0;
+
     const columns = [
-        { id: 'Pending', label: 'To Do', color: '#64748b' },
-        { id: 'In Progress', label: 'In Progress', color: '#3b82f6' },
-        { id: 'Testing', label: 'Testing', color: '#f59e0b' },
-        { id: 'Completed', label: 'Completed', color: '#10b981' }
+        { id: 'Pending', label: 'Backlog', color: '#64748b', icon: 'fa-list-ul' },
+        { id: 'In Progress', label: 'Development', color: '#8b5cf6', icon: 'fa-code' },
+        { id: 'Testing', label: 'Validation', color: '#f59e0b', icon: 'fa-flask' },
+        { id: 'Completed', label: 'Production', color: '#10b981', icon: 'fa-rocket' }
     ];
 
-    // ── Detect if this user is a Team Lead of any project ──
-    const ledProjects = FlowSenseState.projects.filter(p => {
-        const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
-        return leadId && String(leadId) === String(userId);
-    });
-    const isTeamLead = ledProjects.length > 0;
-
-    // ── All projects this user is a member of (but NOT leading) ──
-    const memberOnlyProjects = FlowSenseState.projects.filter(p => {
-        const leadId = p.team_lead && (p.team_lead._id || p.team_lead.id || p.team_lead);
-        const isLead = leadId && String(leadId) === String(userId);
-        if (isLead) return false; // already covered by ledProjects
-        const teamMembers = Array.isArray(p.team_members) ? p.team_members : [];
-        return teamMembers.some(m => String(m._id || m.id || m) === String(userId));
-    });
-
-    // ── Combined stream projects: for Lead = led projects; for member = member-only projects ──
-    // For Team Leads we show their led projects; also include any projects they're just a member of
-    const streamProjectsForLead   = [...ledProjects, ...memberOnlyProjects];
-    const streamProjectsForMember = memberOnlyProjects;
-    const hasStreamContent = isTeamLead ? streamProjectsForLead.length > 0 : streamProjectsForMember.length > 0;
-
     container.innerHTML = `
-        <div class="welcome-header" style="margin-bottom: 30px; display:flex; justify-content: space-between; align-items: flex-end;">
+        <div class="welcome-header" style="display:flex; justify-content: space-between; align-items: center;">
             <div>
-                <h2 style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Strategic Kanban</h2>
-                <p style="color: var(--gray-600); margin-top: 4px;">Orchestrating ${activeTasks.length} objectives across ${selectedPid === 'all' ? 'all streams' : 'selected stream'}.</p>
+                <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Strategic Kanban</h2>
+                <p style="color: var(--gray-600); font-weight: 500;">Orchestrating ${activeTasks.length} objectives across your active streams.</p>
             </div>
         </div>
 
-        <div class="kanban-board" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; align-items: start;">
+        <div class="kanban-board" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; align-items: start; margin-top: 32px;">
             ${columns.map(col => {
                 const colTasks = activeTasks.filter(t => t.status === col.id);
                 return `
-                    <div class="kanban-column" style="background: rgba(248, 250, 252, 0.5); border-radius: 16px; min-height: 600px; display:flex; flex-direction: column; border: 1px solid #f1f5f9;">
-                        <div class="kanban-header" style="padding: 16px; display:flex; justify-content: space-between; align-items: center; border-bottom: 2px solid ${col.color}20;">
-                            <h3 style="font-size: 13px; font-weight: 800; color: var(--gray-800); text-transform: uppercase; letter-spacing: 0.5px; display:flex; align-items: center; gap: 8px;">
-                                <span style="width:8px; height:8px; background:${col.color}; border-radius:50%; display:inline-block;"></span>
+                    <div class="kanban-column" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); border-radius: 20px; min-height: 70vh; display:flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.4); box-shadow: var(--shadow-sm);">
+                        <div class="kanban-header" style="padding: 20px; display:flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.05);">
+                            <h3 style="font-size: 13px; font-weight: 800; color: var(--gray-800); text-transform: uppercase; letter-spacing: 1px; display:flex; align-items: center; gap: 10px;">
+                                <i class="fas ${col.icon}" style="color:${col.color};"></i>
                                 ${col.label}
                             </h3>
-                            <span style="font-size: 11px; font-weight: 700; background: #fff; color: ${col.color}; border: 1px solid ${col.color}40; padding: 2px 8px; border-radius: 20px;">${colTasks.length}</span>
+                            <span style="font-size: 11px; font-weight: 800; background: white; color: ${col.color}; padding: 3px 10px; border-radius: 10px; box-shadow: var(--shadow-sm);">${colTasks.length}</span>
                         </div>
-                        <div class="kanban-items" style="padding: 12px; display:flex; flex-direction: column; gap: 12px; flex-grow: 1;">
+                        <div class="kanban-items" style="padding: 16px; display:flex; flex-direction: column; gap: 16px; flex-grow: 1;">
                             ${colTasks.map(t => `
-                                <div class="kanban-card" style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; position:relative;">
+                                <div class="card hover-lift" style="padding: 16px; border: 1px solid rgba(255,255,255,0.6);">
                                     <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                                        <span style="font-size: 10px; font-weight: 800; color: var(--primary-violet); background: var(--primary-light-purple); padding: 2px 8px; border-radius: 6px;">${t.project_id?.name || 'Task'}</span>
-                                        <div class="dropdown-container" style="position:relative;">
-                                            <button class="btn-xs" style="background:none; border:none; color:var(--gray-400); cursor:pointer;" onclick="toggleTaskMenu(event, '${t._id}')">
-                                                <i class="fas fa-ellipsis-v"></i>
-                                            </button>
-                                            <div id="menu-${t._id}" class="task-menu" style="display:none; position:absolute; right:0; top:20px; background:white; border-radius:8px; box-shadow: var(--shadow-lg); z-index:100; width:150px; border:1px solid #f1f5f9;">
+                                        <span style="font-size: 9px; font-weight: 800; color: var(--primary-violet); background: rgba(139, 92, 246, 0.08); padding: 3px 10px; border-radius: 100px; border: 1px solid rgba(139, 92, 246, 0.1);">${t.project_id?.name || 'Internal'}</span>
+                                        <div class="dropdown-container">
+                                            <button onclick="toggleTaskMenu(event, '${t._id}')" style="background:none; border:none; color:var(--gray-300); cursor:pointer;"><i class="fas fa-ellipsis-v"></i></button>
+                                            <div id="menu-${t._id}" class="task-menu" style="display:none; position:absolute; right:0; top:24px; background:white; border-radius:12px; box-shadow: var(--shadow-premium); z-index:100; width:170px; border:1px solid var(--gray-50); padding:6px;">
                                                 ${columns.filter(c => c.id !== t.status).map(c => `
-                                                    <div class="menu-item-kanban" onclick="updateTaskStatus('${t._id}', '${c.id}')" style="padding:10px 14px; font-size:12px; cursor:pointer; color:var(--gray-700); transition: background 0.2s;">
-                                                        <i class="fas fa-arrow-right" style="font-size:10px; margin-right:8px; color:var(--gray-300);"></i> Move to ${c.label}
+                                                    <div onclick="updateTaskStatus('${t._id}', '${c.id}')" style="padding:10px 12px; font-size:12px; cursor:pointer; color:var(--gray-700); border-radius:8px; display:flex; align-items:center; gap:10px;" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background='none'">
+                                                        <i class="fas fa-arrow-right" style="font-size:10px; color:${c.color};"></i> ${c.label}
                                                     </div>
                                                 `).join('')}
                                             </div>
                                         </div>
                                     </div>
-                                    <h4 style="font-size: 15px; font-weight: 700; color: var(--gray-900); margin-bottom: 6px;">${t.name}</h4>
-                                    <p style="font-size: 12px; color: var(--gray-600); line-height: 1.5; margin-bottom: 16px;">${t.description ? (t.description.length > 70 ? t.description.substring(0, 67) + '...' : t.description) : 'No details.'}</p>
+                                    <h4 style="font-size: 15px; font-weight: 800; color: var(--gray-900); margin-bottom: 6px; line-height: 1.3;">${t.name}</h4>
+                                    <p style="font-size: 12px; color: var(--gray-500); line-height: 1.5; margin-bottom: 20px;">${t.description ? (t.description.length > 70 ? t.description.substring(0, 67) + '...' : t.description) : 'No operational details.'}</p>
                                     
-                                    <div style="display:flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px dashed #e2e8f0;">
-                                        <div style="display:flex; align-items: center; gap: 6px; color: var(--gray-500); font-size: 11px;">
-                                            <i class="far fa-calendar-alt"></i>
-                                            <span>${new Date(t.deadline).toLocaleDateString()}</span>
+                                    <div style="display:flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid var(--gray-50);">
+                                        <div style="display:flex; align-items: center; gap: 8px; color: var(--gray-400); font-size: 11px; font-weight: 600;">
+                                            <i class="far fa-clock"></i>
+                                            <span>${new Date(t.deadline).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
                                         </div>
                                         <div style="display:flex; align-items: center; gap: 8px;">
-                                            <button class="btn-xs" style="background:#f3e8ff; color:#7c3aed; border:none; padding:4px 8px; border-radius:6px; cursor:pointer; font-weight:600; font-size:11px;" onclick="openTaskCommunicationModal('${t._id}', '${t.name.replace(/'/g, "\\'")}')">
-                                                <i class="fas fa-comment-alt"></i> Discuss
+                                            <button class="btn-primary" style="padding:5px 10px; font-size:10px; border-radius:6px;" onclick="openTaskCommunicationModal('${t._id}', '${t.name.replace(/'/g, "\\'")}')">
+                                                <i class="fas fa-comment-alt"></i>
                                             </button>
-                                            <div style="font-size: 11px; font-weight: 700; color: var(--gray-700);">
-                                                ${t.hours}h
-                                            </div>
+                                            <span style="font-size: 11px; font-weight: 800; color: var(--gray-800);">${t.hours}h</span>
                                         </div>
                                     </div>
                                 </div>
                             `).join('')}
-                            ${colTasks.length === 0 ? `<div style="text-align:center; padding: 40px 20px; color: var(--gray-300); font-size: 12px; border: 2px dashed #f1f5f9; border-radius:12px;">No tasks here</div>` : ''}
+                            ${colTasks.length === 0 ? `<div style="text-align:center; padding: 40px 20px; color: var(--gray-400); font-size: 12px; font-weight: 500; opacity:0.6;">No objectives assigned</div>` : ''}
                         </div>
                     </div>
                 `;
@@ -2671,7 +2489,6 @@ function showToast(msg, type = 'success', title = '') {
         <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
         <div class="toast-progress"></div>
     `;
-    
     container.appendChild(toast);
     
     // Trigger entrance
@@ -2689,7 +2506,7 @@ function showToast(msg, type = 'success', title = '') {
 function renderEmployeePerformanceView(container) {
     const userId = localStorage.getItem("userId");
     
-    // 1. Calculate TOTAL workload across ALL projects (not context-filtered)
+    // 1. Data Aggregation
     const myAllTasks = FlowSenseState.tasks.filter(t => {
         const tid = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
         return String(tid) === String(userId);
@@ -2698,34 +2515,19 @@ function renderEmployeePerformanceView(container) {
     const totalHours = myAllTasks.reduce((sum, t) => sum + (t.hours || 0), 0);
     const workloadPercentage = Math.round((totalHours / 40) * 100);
     
-    // 2. Calculate Efficiency based on task completion
     const completedTasks = myAllTasks.filter(t => t.status === 'Completed').length;
-    const totalTasks = myAllTasks.length;
-    const efficiency = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
+    const efficiency = myAllTasks.length > 0 ? Math.round((completedTasks / myAllTasks.length) * 100) : 100;
     
-    // 3. Determine Status and Colors
-    let statusText = 'Optimal';
-    let statusColor = '#8b5cf6'; // Violet
-    let statusDesc = 'You are operating at peak sustainable performance.';
-    
-    if (workloadPercentage > 120) {
-        statusText = 'Overloaded';
-        statusColor = '#ef4444'; // Red
-        statusDesc = 'Your current load exceeds capacity. Consider delegating or requesting extensions.';
-    } else if (workloadPercentage < 80) {
-        statusText = 'Available';
-        statusColor = '#3b82f6'; // Blue
-        statusDesc = 'You have additional bandwidth for new objectives.';
-    } else {
-        statusText = 'Balanced';
-        statusColor = '#10b981'; // Green
-        statusDesc = 'Your workload is perfectly balanced for optimal output.';
-    }
+    // 2. Status Mapping
+    let status = { text: 'Optimal', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', desc: 'You are operating at peak sustainable performance.' };
+    if (workloadPercentage > 120) status = { text: 'Overloaded', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', desc: 'Current load exceeds capacity. Consider delegation.' };
+    else if (workloadPercentage < 80) status = { text: 'Available', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)', desc: 'Additional bandwidth detected for new objectives.' };
+    else if (workloadPercentage >= 80 && workloadPercentage <= 120) status = { text: 'Balanced', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', desc: 'Perfectly balanced for optimal professional output.' };
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>Capacity Intelligence</h2>
-            <p>Real-time analysis of your professional bandwidth and delivery efficiency.</p>
+            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Capacity Intelligence</h2>
+            <p style="color: var(--gray-600); font-weight: 500;">Real-time analysis of your professional bandwidth and delivery efficiency.</p>
         </div>
         
         <div class="stats-grid">
@@ -2733,59 +2535,76 @@ function renderEmployeePerformanceView(container) {
                 <div class="stat-icon violet"><i class="fas fa-hourglass-half"></i></div>
                 <div>
                     <div class="stat-value">${totalHours}h</div>
-                    <div class="stat-label">Total Assigned Hours</div>
+                    <div class="stat-label">Allocated Time</div>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon green"><i class="fas fa-bullseye"></i></div>
                 <div>
                     <div class="stat-value">${efficiency}%</div>
-                    <div class="stat-label">Efficiency Score</div>
+                    <div class="stat-label">Efficiency Index</div>
+                </div>
+            </div>
+            <div class="stat-card" style="grid-column: span 2;">
+                <div class="stat-icon blue"><i class="fas fa-microchip"></i></div>
+                <div style="flex:1;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="stat-label" style="font-size:11px;">Current Capacity Load</span>
+                        <span class="stat-value" style="font-size:18px;">${workloadPercentage}%</span>
+                    </div>
+                    <div style="height:8px; background:var(--gray-100); border-radius:10px; overflow:hidden;">
+                        <div style="height:100%; width:${Math.min(workloadPercentage, 100)}%; background:${status.color}; border-radius:10px; transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);"></div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="dashboard-grid">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Workload Health</h3>
-                </div>
-                <div style="text-align:center; padding:30px 20px;">
-                    <div class="capacity-circle-wrapper" style="--percent: ${Math.min(workloadPercentage, 100)}; --color: ${statusColor};">
-                        <div class="capacity-circle-inner">
-                            <div class="capacity-value">${workloadPercentage}%</div>
-                            <div class="capacity-label">${statusText}</div>
-                        </div>
+        <div class="dashboard-grid" style="margin-top:32px;">
+            <div class="card" style="display:flex; flex-direction:column; align-items:center; text-align:center; padding:48px;">
+                <div class="capacity-gauge-wrapper" style="position:relative; width:220px; height:220px; margin-bottom:32px;">
+                    <svg viewBox="0 0 100 100" style="transform: rotate(-90deg); width:100%; height:100%;">
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="var(--gray-100)" stroke-width="6"></circle>
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="${status.color}" stroke-width="8" 
+                                stroke-dasharray="${2 * Math.PI * 45}" 
+                                stroke-dashoffset="${(2 * Math.PI * 45) * (1 - Math.min(workloadPercentage, 100) / 100)}" 
+                                stroke-linecap="round" style="transition: stroke-dashoffset 2s cubic-bezier(0.4, 0, 0.2, 1);"></circle>
+                    </svg>
+                    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);">
+                        <div style="font-size:42px; font-weight:900; color:var(--gray-900); letter-spacing:-1px;">${workloadPercentage}%</div>
+                        <div style="font-size:12px; font-weight:800; color:${status.color}; text-transform:uppercase; letter-spacing:1px; margin-top:4px;">${status.text}</div>
                     </div>
-                    <p style="font-size:14px; color:var(--gray-600); margin-top:30px; line-height:1.6;">${statusDesc}</p>
+                </div>
+                <h3 style="font-size:22px; font-weight:800; color:var(--gray-900); margin-bottom:12px;">Operational Status</h3>
+                <p style="color:var(--gray-600); max-width:400px; line-height:1.6; font-size:15px;">${status.desc}</p>
+                <div style="margin-top:24px; padding:12px 24px; border-radius:100px; background:${status.bg}; color:${status.color}; font-weight:700; font-size:13px; border:1px solid ${status.color}20;">
+                    <i class="fas fa-shield-alt" style="margin-right:8px;"></i> FlowSense Verified Bandwidth
                 </div>
             </div>
             
             <div class="card">
                 <div class="card-header">
-                    <h3>Project Breakdown</h3>
+                    <h3>Project Utilization</h3>
+                    <p style="font-size:12px; color:var(--gray-500);">Load distribution across active streams</p>
                 </div>
-                <div class="workload-breakdown" style="padding: 10px 0;">
+                <div class="workload-breakdown" style="margin-top:24px;">
                     ${(() => {
                         const projectHours = {};
                         myAllTasks.forEach(t => {
-                            const pName = t.project_id?.name || 'Unknown Project';
+                            const pName = t.project_id?.name || 'Internal Ops';
                             projectHours[pName] = (projectHours[pName] || 0) + (t.hours || 0);
                         });
-                        
                         const entries = Object.entries(projectHours);
-                        if (entries.length === 0) return '<p style="color:var(--gray-400); text-align:center; padding:20px;">No active task data.</p>';
-                        
+                        if (entries.length === 0) return '<p style="color:var(--gray-400); text-align:center; padding:40px;">No operational telemetry available.</p>';
                         return entries.map(([name, hours]) => {
                             const perc = totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0;
                             return `
-                                <div style="margin-bottom:20px;">
-                                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; font-weight:600;">
-                                        <span>${name}</span>
+                                <div style="margin-bottom:24px;">
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:14px; font-weight:700;">
+                                        <span style="color:var(--gray-700);">${name}</span>
                                         <span style="color:var(--primary-violet);">${hours}h (${perc}%)</span>
                                     </div>
-                                    <div class="line-progress-bg" style="height:6px; background: #f1f5f9; border-radius: 10px; overflow: hidden;">
-                                        <div class="line-progress-fill" style="width: ${perc}%; height: 100%; background: var(--violet-gradient); border-radius: 10px;"></div>
+                                    <div style="height:8px; background: #f1f5f9; border-radius: 10px; overflow: hidden;">
+                                        <div style="width: ${perc}%; height: 100%; background: var(--violet-gradient); border-radius: 10px; transition: width 1s ease;"></div>
                                     </div>
                                 </div>
                             `;
@@ -2794,54 +2613,11 @@ function renderEmployeePerformanceView(container) {
                 </div>
             </div>
         </div>
-
-        <style>
-            .capacity-circle-wrapper {
-                position: relative;
-                width: 180px;
-                height: 180px;
-                border-radius: 50%;
-                background: conic-gradient(var(--color) calc(var(--percent) * 1%), #f1f5f9 0);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto;
-                box-shadow: var(--shadow-md);
-            }
-            .capacity-circle-inner {
-                width: 150px;
-                height: 150px;
-                background: white;
-                border-radius: 50%;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
-            }
-            .capacity-value {
-                font-size: 32px;
-                font-weight: 800;
-                color: var(--gray-900);
-            }
-            .capacity-label {
-                font-size: 12px;
-                font-weight: 700;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                color: var(--color);
-                margin-top: 4px;
-            }
-        </style>
     `;
 }
 
 
 // ── Notification Dropdown Logic (Real-time Contextual) ──
-
-let notificationFilter = 'all';
-let expandedNotifId = null;
-let FlowSenseNotifications = []; // Purged static notifications
 
 async function addNotification(type, title, desc, longDesc, category, projectLink = null, action = null, targetRole = null, recipientId = null) {
     const companyId = getCompanyId();
@@ -3699,6 +3475,7 @@ function logout() {
     localStorage.clear();
     window.location.href = 'auth/login.html';
 }
+window.logout = logout;
 
 window.addEventListener('click', (e) => {
     const sheet = document.getElementById('profile-sheet');
