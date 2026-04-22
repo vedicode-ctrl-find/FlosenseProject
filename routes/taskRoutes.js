@@ -45,7 +45,7 @@ router.get('/project/:project_id', async (req, res) => {
 // @access  Private (Team Lead only)
 router.post('/', async (req, res) => {
     try {
-        const { name, description, required_skills, deadline, hours, assigned_to, project_id, company_id, requested_by } = req.body;
+        const { name, description, required_skills, deadline, hours, assigned_to, project_id, company_id, requested_by, priority } = req.body;
 
         const project = await Project.findById(project_id);
         if (!project) {
@@ -86,7 +86,7 @@ router.post('/', async (req, res) => {
         // Create the task
         const task = await Task.create({
             name, description, required_skills, deadline, hours,
-            assigned_to, project_id, company_id
+            assigned_to, project_id, company_id, priority
         });
 
         // Recalculate Workload

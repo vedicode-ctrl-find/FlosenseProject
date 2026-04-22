@@ -628,7 +628,8 @@ async function renderAssignTaskModalContent(showForm = false) {
             const currentLoad = emp ? (emp.workload_percentage || 0) : 0;
             const estimatedImpact = Math.round(hours * 2.5);
             if (currentLoad + estimatedImpact > 100) {
-               if (!confirm(`Capacity Alert: ${emp.name} is reaching peak load. Continue?`)) return;
+               const confirmed = await showConfirm('Capacity Alert', `${emp.name} is reaching peak load. Continue?`, 'Abort', 'Continue');
+               if (!confirmed) return;
             }
 
             submitBtn.disabled = true;
@@ -1158,7 +1159,7 @@ async function renderTeamSetupStep() {
 }
 
 // 2. Task Assignment
-function handleTaskAssignment(e) {
+async function handleTaskAssignment(e) {
     e.preventDefault();
     const title = document.getElementById('t-name').value;
     const project = document.getElementById('t-project').value;
@@ -1168,7 +1169,8 @@ function handleTaskAssignment(e) {
     // Smart Alert check
     const emp = FlowSenseState.employees.find(e => e.id === assigneeId);
     if (emp && emp.workload + (hours * 2.5) > 130) {
-        if (!confirm(`${emp.name} is already near capacity. Assigning this will cause severe overload. Proceed anyway?`)) {
+        const confirmed = await showConfirm('Capacity Alert', `${emp.name} is already near capacity. Assigning this will cause severe overload. Proceed anyway?`, 'Abort', 'Continue');
+        if (!confirmed) {
             return;
         }
     }
@@ -1653,7 +1655,7 @@ function renderTaskItem(title, project, assignee, deadline, status) {
 
 // ── Boilerplate for details & views (simplified) ──
 function renderOrgView(container) { container.innerHTML = '<h2>Org Settings</h2><p>Mock Code: FS-2026</p>'; }
-function openTaskDetails(name) { alert(`Thread for: ${name}\nSystem: No active messages.`); }
+function openTaskDetails(name) { showToast(`Thread for: ${name}\nSystem: No active messages.`, 'info'); }
 // Temporary integration for Assign Task / Manage Team mock URLs.
 window.openTeamSetup = function(projectId) {
     openTeamSetupModal(projectId);
@@ -1674,7 +1676,7 @@ function toggleProjectMenu(event, pid) {
     if (!isOpen) menu.classList.add('show');
 }
 
-async function showConfirm(title, text) {
+async function showConfirm(title, text, abortLabel = 'Cancel', proceedLabel = 'Proceed') {
     return new Promise((resolve) => {
         const overlay = document.getElementById('confirm-modal-overlay');
         const titleEl = document.getElementById('confirm-title');
@@ -1684,6 +1686,8 @@ async function showConfirm(title, text) {
 
         titleEl.textContent = title;
         textEl.textContent = text;
+        abortBtn.textContent = abortLabel;
+        proceedBtn.textContent = proceedLabel;
         overlay.style.display = 'flex';
 
         const cleanup = (val) => {
@@ -1704,7 +1708,9 @@ async function deleteProject(event, pid) {
     // Use custom premium confirmation modal
     const confirmed = await showConfirm(
         'Terminate Stream?', 
-        'This will permanently purge all telemetry and resource allocations for this project. This action is irreversible.'
+        'This will permanently purge all telemetry and resource allocations for this project. This action is irreversible.',
+        'Cancel',
+        'Terminate'
     );
     
     if (!confirmed) return;
@@ -1756,7 +1762,7 @@ function openProjectDetails(projectId) {
         actionButtons = `
             <div class="project-actions-row">
                 <button class="btn btn-secondary btn-glass" onclick="loadView('projects')"><i class="fas fa-arrow-left"></i> Back</button>
-                <button class="btn btn-primary" onclick="alert('Manage this project')">Control Panel</button>
+                <button class="btn btn-primary" onclick="showToast('Manage this project', 'info')">Control Panel</button>
             </div>
         `;
     } else {
@@ -2364,7 +2370,10 @@ function renderEmployeeTasksView(container) {
                             ${colTasks.map(t => `
                                 <div class="kanban-card" style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; position:relative;">
                                     <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                                        <span style="font-size: 10px; font-weight: 800; color: var(--primary-violet); background: var(--primary-light-purple); padding: 2px 8px; border-radius: 6px;">${t.project_id?.name || 'Task'}</span>
+                                        <div style="display:flex; gap: 6px;">
+                                            <span style="font-size: 10px; font-weight: 800; color: var(--primary-violet); background: var(--primary-light-purple); padding: 2px 8px; border-radius: 6px;">${t.project_id?.name || 'Task'}</span>
+                                            <span class="p-tag p-${t.priority?.toLowerCase() || 'medium'}" style="font-size: 10px; padding: 2px 8px; border-radius: 6px; font-weight: 800; text-transform: uppercase;">${t.priority || 'Med'}</span>
+                                        </div>
                                         <div class="dropdown-container" style="position:relative;">
                                             <button class="btn-xs" style="background:none; border:none; color:var(--gray-400); cursor:pointer;" onclick="toggleTaskMenu(event, '${t._id}')">
                                                 <i class="fas fa-ellipsis-v"></i>
@@ -3245,7 +3254,9 @@ function addPaymentMethod() {
 async function cancelSubscription() {
     const confirmed = await showConfirm(
         'Terminate Subscription?', 
-        'This will immediately revoke your enterprise intelligence features and data analytics dashboard.'
+        'This will immediately revoke your enterprise intelligence features and data analytics dashboard.',
+        'Cancel',
+        'Terminate'
     );
     
     if (confirmed) {

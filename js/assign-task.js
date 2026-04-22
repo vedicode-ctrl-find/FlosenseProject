@@ -317,6 +317,7 @@ async function submitTaskPayload(finalAssigneeId) {
         required_skills: [document.getElementById('task-skill').value].filter(Boolean),
         deadline:        document.getElementById('task-deadline').value,
         hours:           parseInt(document.getElementById('task-hours').value),
+        priority:        document.getElementById('task-priority').value,
         assigned_to:     finalAssigneeId,
         project_id:      document.getElementById('task-project').value,
         company_id:      companyId,
@@ -429,6 +430,15 @@ function hideLoadingState() {
                             <label>Estimated Hours <span class="req">*</span></label>
                             <input type="number" id="task-hours" class="styled-input" placeholder="Effort in hours" min="1" required>
                         </div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label>Priority Level</label>
+                        <select id="task-priority" class="styled-input">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                        </select>
                     </div>
 
                     <div class="form-group full-width">

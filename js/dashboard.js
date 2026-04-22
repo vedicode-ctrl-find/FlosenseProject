@@ -818,7 +818,7 @@ async function renderTeamSetupStep() {
 }
 
 // 2. Task Assignment
-function handleTaskAssignment(e) {
+async function handleTaskAssignment(e) {
     e.preventDefault();
     const title = document.getElementById('t-name').value;
     const project = document.getElementById('t-project').value;
@@ -828,7 +828,8 @@ function handleTaskAssignment(e) {
     // Smart Alert check
     const emp = FlowSenseState.employees.find(e => e.id === assigneeId);
     if (emp && emp.workload + (hours * 2.5) > 130) {
-        if (!confirm(`${emp.name} is already near capacity. Assigning this will cause severe overload. Proceed anyway?`)) {
+        const confirmed = await showConfirm('Capacity Alert', `${emp.name} is already near capacity. Assigning this will cause severe overload. Proceed anyway?`, 'Abort', 'Continue');
+        if (!confirmed) {
             return;
         }
     }
@@ -1323,7 +1324,7 @@ function renderTaskItem(title, project, assignee, deadline, status) {
 
 // ── Boilerplate for details & views (simplified) ──
 function renderOrgView(container) { container.innerHTML = '<h2>Org Settings</h2><p>Mock Code: FS-2026</p>'; }
-function openTaskDetails(name) { alert(`Thread for: ${name}\nSystem: No active messages.`); }
+function openTaskDetails(name) { showToast(`Thread for: ${name}\nSystem: No active messages.`, 'info'); }
 // Temporary integration for Assign Task / Manage Team mock URLs.
 window.openTeamSetup = function(projectId) {
     // We would pass the project id to the external page via localStorage or query param
@@ -1347,7 +1348,7 @@ function toggleProjectMenu(event, pid) {
     if (!isOpen) menu.classList.add('show');
 }
 
-async function showConfirm(title, text) {
+async function showConfirm(title, text, abortLabel = 'Cancel', proceedLabel = 'Proceed') {
     return new Promise((resolve) => {
         const overlay = document.getElementById('confirm-modal-overlay');
         const titleEl = document.getElementById('confirm-title');
@@ -1357,6 +1358,8 @@ async function showConfirm(title, text) {
 
         titleEl.textContent = title;
         textEl.textContent = text;
+        abortBtn.textContent = abortLabel;
+        proceedBtn.textContent = proceedLabel;
         overlay.style.display = 'flex';
 
         const cleanup = (val) => {
@@ -1377,7 +1380,9 @@ async function deleteProject(event, pid) {
     // Use custom premium confirmation modal
     const confirmed = await showConfirm(
         'Terminate Stream?', 
-        'This will permanently purge all telemetry and resource allocations for this project. This action is irreversible.'
+        'This will permanently purge all telemetry and resource allocations for this project. This action is irreversible.',
+        'Cancel',
+        'Terminate'
     );
     
     if (!confirmed) return;
@@ -1436,7 +1441,7 @@ function openProjectDetails(projectId) {
     } else if (isLead) {
         tabsContent = `
             <div class="project-details-tabs" style="margin-top:20px; display:flex; gap:10px;">
-                <button class="btn btn-primary" onclick="alert('Overview view placeholder')">Overview</button>
+                <button class="btn btn-primary" onclick="showToast('Overview view placeholder', 'info')">Overview</button>
                 <button class="btn btn-secondary" onclick="openTeamSetupModal('${p.id}')">Manage Team</button>
                 <button class="btn btn-secondary" onclick="window.location.href='assign-task.html'">Assign Tasks</button>
             </div>
@@ -1565,7 +1570,7 @@ function renderEmployeeProjectsView(container) {
                             <p style="font-size:12px; font-weight:600;">${p.lead}</p>
                             <p style="font-size:11px; color:var(--gray-600);">Project Lead</p>
                         </div>
-                        <button class="btn btn-outline btn-xs" onclick="alert(\"Sending contact request to ${p.lead}\")">Contact Lead</button>
+                        <button class="btn btn-outline btn-xs" onclick="showToast('Sending contact request to ${p.lead}', 'info')">Contact Lead</button>
                     </div>
                 </div>
             `).join("")}
@@ -2106,7 +2111,9 @@ function addPaymentMethod() {
 async function cancelSubscription() {
     const confirmed = await showConfirm(
         'Terminate Subscription?', 
-        'This will immediately revoke your enterprise intelligence features and data analytics dashboard.'
+        'This will immediately revoke your enterprise intelligence features and data analytics dashboard.',
+        'Cancel',
+        'Terminate'
     );
     
     if (confirmed) {
