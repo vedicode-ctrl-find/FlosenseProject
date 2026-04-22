@@ -1302,7 +1302,295 @@ function openProjectDetails(projectId) {
     `;
 }
 
-function renderPerformanceView(container) { container.innerHTML = '<h2>Performance</h2><p>Analytics loading...</p>'; }
+// ── Insights Module (Advanced Graphs) ──
+
+let insightsCharts = {
+    workload: null,
+    status: null,
+    performance: null
+};
+
+async function renderPerformanceView(container) {
+    const projects = await fetchLiveProjects();
+    
+    container.innerHTML = `
+        <div class="welcome-header">
+            <h2>Enterprise Insights</h2>
+            <p>Visualizing team performance, workload distribution, and project velocity.</p>
+        </div>
+
+        <div class="insights-header">
+            <div class="header-info">
+                <h3 style="margin:0; font-size:18px;">Project Analytics</h3>
+                <p style="margin:4px 0 0 0; font-size:13px; color:var(--gray-500);">Select a project stream to synchronize telemetry.</p>
+            </div>
+            <div class="insights-controls">
+                <div class="project-selector-wrapper" id="insights-project-selector-container">
+                    <div class="custom-select-wrapper" id="insights-project-select">
+                        <div class="custom-select-trigger">
+                            <span>— Select Project Stream —</span>
+                            <i class="fas fa-chevron-down" style="color:var(--gray-300); font-size:12px;"></i>
+                        </div>
+                        <div class="custom-options"></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="refreshInsights()" id="btn-refresh-insights" style="display:none;">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <div id="insights-display-area">
+            <div class="insights-empty-state">
+                <i class="fas fa-chart-pie"></i>
+                <p>Select a project to visualize intelligence data.</p>
+            </div>
+        </div>
+    `;
+
+    // Initialize Custom Select for Project
+    const options = projects.map(p => ({ value: p._id, label: p.name }));
+    initializeCustomSelect('insights-project-select', options, (projectId) => {
+        loadInsightsForProject(projectId);
+    });
+
+    // If a project is already active in state (optional, for better UX)
+    if (projects.length > 0) {
+        // Auto-select first project for demo purposes or keep empty?
+        // Let's keep it empty for "Select a project" flow unless user wants otherwise.
+    }
+}
+
+async function loadInsightsForProject(projectId) {
+    const displayArea = document.getElementById('insights-display-area');
+    const refreshBtn = document.getElementById('btn-refresh-insights');
+    
+    displayArea.innerHTML = `
+        <div style="display:flex; justify-content:center; align-items:center; height:400px; flex-direction:column; gap:20px;">
+            <i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--primary-violet);"></i>
+            <p style="color:var(--gray-500); font-weight:500;">Synthesizing project telemetry...</p>
+        </div>
+    `;
+    refreshBtn.style.display = 'block';
+
+    try {
+        // Fetch tasks and members in parallel
+        const [tasksRes, membersRes] = await Promise.all([
+            fetch(`http://localhost:5000/api/tasks/project/${projectId}`),
+            fetch(`http://localhost:5000/api/projects/${projectId}/members`)
+        ]);
+
+        const tasksData = await tasksRes.json();
+        const membersData = await membersRes.json();
+
+        if (tasksData.success && membersData.success) {
+            renderInsightsDashboard(displayArea, membersData.data, tasksData.data);
+        } else {
+            displayArea.innerHTML = `<div class="alert-box danger">Failed to fetch project data.</div>`;
+        }
+    } catch (err) {
+        console.error('Insights fetch error:', err);
+        displayArea.innerHTML = `<div class="alert-box danger">Communication fault with analytics server.</div>`;
+    }
+}
+
+function renderInsightsDashboard(container, members, tasks) {
+    container.innerHTML = `
+        <div class="charts-grid">
+            <!-- Team Workload Bar Chart -->
+            <div class="chart-card">
+                <div class="chart-card-header">
+                    <h3>Team Workload</h3>
+                    <div class="info-tooltip" title="Calculated based on assigned hours in this project relative to 40h/week capacity.">
+                        <i class="fas fa-info-circle" style="color:var(--gray-300);"></i>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="workloadChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Task Status Pie Chart -->
+            <div class="chart-card">
+                <div class="chart-card-header">
+                    <h3>Task Status Overview</h3>
+                    <div style="font-size:12px; color:var(--gray-500); font-weight:600;" id="total-tasks-count">Total: ${tasks.length} Tasks</div>
+                </div>
+                <div class="pie-chart-container">
+                    <canvas id="statusChart"></canvas>
+                </div>
+                <div class="total-tasks-display" id="tasks-percentage-display">
+                    <!-- Dynamic text -->
+                </div>
+            </div>
+
+            <!-- Performance Bar Chart -->
+            <div class="chart-card full-width">
+                <div class="chart-card-header">
+                    <h3>Team Performance Efficiency</h3>
+                    <div id="top-performer-container"></div>
+                </div>
+                <div class="chart-container" style="height: 280px;">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 1. Process Data for Workload
+    const workloadData = members.map(m => {
+        const memberTasks = tasks.filter(t => t.assigned_to && (t.assigned_to._id === m._id || t.assigned_to === m._id));
+        const totalHours = memberTasks.reduce((sum, t) => sum + (t.hours || 0), 0);
+        const percentage = Math.round((totalHours / 40) * 100);
+        return { name: m.name, percentage };
+    });
+
+    // 2. Process Data for Status
+    const statusCounts = {
+        'Pending': 0, // To Do
+        'In Progress': 0,
+        'Testing': 0,
+        'Completed': 0 // Done
+    };
+    tasks.forEach(t => {
+        if (statusCounts.hasOwnProperty(t.status)) {
+            statusCounts[t.status]++;
+        } else {
+            statusCounts['Pending']++; // Fallback
+        }
+    });
+
+    // 3. Process Data for Performance
+    const performanceData = members.map(m => {
+        const memberTasks = tasks.filter(t => t.assigned_to && (t.assigned_to._id === m._id || t.assigned_to === m._id));
+        const completed = memberTasks.filter(t => t.status === 'Completed').length;
+        const total = memberTasks.length;
+        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+        return { name: m.name, percentage };
+    });
+
+    // Find top performer
+    const topPerformer = performanceData.reduce((prev, current) => (prev.percentage > current.percentage) ? prev : current, {percentage: -1});
+    if (topPerformer.percentage > 0) {
+        document.getElementById('top-performer-container').innerHTML = `
+            <div class="top-performer-badge">
+                <i class="fas fa-crown"></i> Top Performer: ${topPerformer.name}
+            </div>
+        `;
+    }
+
+    // --- Render Charts ---
+
+    // Destroy existing charts if they exist
+    Object.values(insightsCharts).forEach(chart => { if(chart) chart.destroy(); });
+
+    // Workload Chart
+    const ctxWl = document.getElementById('workloadChart').getContext('2d');
+    insightsCharts.workload = new Chart(ctxWl, {
+        type: 'bar',
+        data: {
+            labels: workloadData.map(d => d.name),
+            datasets: [{
+                label: 'Workload (%)',
+                data: workloadData.map(d => d.percentage),
+                backgroundColor: workloadData.map(d => {
+                    if (d.percentage > 120) return '#ef4444'; // Overloaded
+                    if (d.percentage >= 80) return '#f59e0b'; // Balanced/Busy
+                    return '#10b981'; // Free/Available
+                }),
+                borderRadius: 8,
+                barThickness: 30
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => `Workload: ${context.raw}%`,
+                        afterLabel: () => 'Includes tasks from current project'
+                    }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, max: Math.max(150, ...workloadData.map(d => d.percentage + 20)), grid: { display: false } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+
+    // Status Chart
+    const ctxSt = document.getElementById('statusChart').getContext('2d');
+    insightsCharts.status = new Chart(ctxSt, {
+        type: 'doughnut',
+        data: {
+            labels: ['To Do', 'In Progress', 'Testing', 'Done'],
+            datasets: [{
+                data: [statusCounts['Pending'], statusCounts['In Progress'], statusCounts['Testing'], statusCounts['Completed']],
+                backgroundColor: ['#3b82f6', '#f59e0b', '#f97316', '#10b981'],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const val = context.raw;
+                            const perc = total > 0 ? Math.round((val / total) * 100) : 0;
+                            return ` ${context.label}: ${val} (${perc}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Performance Chart
+    const ctxPerf = document.getElementById('performanceChart').getContext('2d');
+    insightsCharts.performance = new Chart(ctxPerf, {
+        type: 'bar',
+        data: {
+            labels: performanceData.map(d => d.name),
+            datasets: [{
+                label: 'Performance Efficiency (%)',
+                data: performanceData.map(d => d.percentage),
+                backgroundColor: '#8b5cf6',
+                borderRadius: 8,
+                barThickness: 40
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: { beginAtZero: true, max: 100, grid: { display: false } },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+}
+
+function refreshInsights() {
+    const trigger = document.querySelector('#insights-project-select .custom-select-trigger span');
+    const projects = liveData.projects;
+    const selectedProjectName = trigger.textContent;
+    const p = projects.find(proj => proj.name === selectedProjectName);
+    if (p) loadInsightsForProject(p._id);
+}
+
 
 function logout() { localStorage.clear(); window.location.href = 'auth/login.html'; }
 

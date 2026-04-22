@@ -2687,42 +2687,155 @@ function showToast(msg, type = 'success', title = '') {
 }
 
 function renderEmployeePerformanceView(container) {
+    const userId = localStorage.getItem("userId");
+    
+    // 1. Calculate TOTAL workload across ALL projects (not context-filtered)
+    const myAllTasks = FlowSenseState.tasks.filter(t => {
+        const tid = t.assigned_to?._id || t.assigned_to?.id || t.assigned_to;
+        return String(tid) === String(userId);
+    });
+    
+    const totalHours = myAllTasks.reduce((sum, t) => sum + (t.hours || 0), 0);
+    const workloadPercentage = Math.round((totalHours / 40) * 100);
+    
+    // 2. Calculate Efficiency based on task completion
+    const completedTasks = myAllTasks.filter(t => t.status === 'Completed').length;
+    const totalTasks = myAllTasks.length;
+    const efficiency = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
+    
+    // 3. Determine Status and Colors
+    let statusText = 'Optimal';
+    let statusColor = '#8b5cf6'; // Violet
+    let statusDesc = 'You are operating at peak sustainable performance.';
+    
+    if (workloadPercentage > 120) {
+        statusText = 'Overloaded';
+        statusColor = '#ef4444'; // Red
+        statusDesc = 'Your current load exceeds capacity. Consider delegating or requesting extensions.';
+    } else if (workloadPercentage < 80) {
+        statusText = 'Available';
+        statusColor = '#3b82f6'; // Blue
+        statusDesc = 'You have additional bandwidth for new objectives.';
+    } else {
+        statusText = 'Balanced';
+        statusColor = '#10b981'; // Green
+        statusDesc = 'Your workload is perfectly balanced for optimal output.';
+    }
+
     container.innerHTML = `
         <div class="welcome-header">
-            <h2>My Insights</h2>
-            <p>Tracking your efficiency and optimization metrics.</p>
+            <h2>Capacity Intelligence</h2>
+            <p>Real-time analysis of your professional bandwidth and delivery efficiency.</p>
         </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon violet"><i class="fas fa-hourglass-half"></i></div>
+                <div>
+                    <div class="stat-value">${totalHours}h</div>
+                    <div class="stat-label">Total Assigned Hours</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green"><i class="fas fa-bullseye"></i></div>
+                <div>
+                    <div class="stat-value">${efficiency}%</div>
+                    <div class="stat-label">Efficiency Score</div>
+                </div>
+            </div>
+        </div>
+
         <div class="dashboard-grid">
             <div class="card">
-                <h3>Efficiency Trend</h3>
-                <div style="height:200px; display:flex; align-items:flex-end; gap:20px; padding:20px 0;">
-                    <div style="flex:1; height:70%; background:var(--primary-light-purple); border-radius:8px 8px 0 0; position:relative;">
-                        <span style="position:absolute; bottom:-25px; left:50%; transform:translateX(-50%); font-size:11px; color:var(--gray-600);">Mon</span>
-                    </div>
-                    <div style="flex:1; height:85%; background:var(--primary-light-purple); border-radius:8px 8px 0 0; position:relative;">
-                        <span style="position:absolute; bottom:-25px; left:50%; transform:translateX(-50%); font-size:11px; color:var(--gray-600);">Tue</span>
-                    </div>
-                    <div style="flex:1; height:92%; background:var(--primary-violet); border-radius:8px 8px 0 0; position:relative;">
-                        <span style="position:absolute; bottom:-25px; left:50%; transform:translateX(-50%); font-size:11px; color:var(--gray-600);">Wed</span>
-                    </div>
-                    <div style="flex:1; height:75%; background:var(--primary-light-purple); border-radius:8px 8px 0 0; position:relative;">
-                        <span style="position:absolute; bottom:-25px; left:50%; transform:translateX(-50%); font-size:11px; color:var(--gray-600);">Thu</span>
-                    </div>
+                <div class="card-header">
+                    <h3>Workload Health</h3>
                 </div>
-                <p style="font-size:13px; color:var(--gray-600); margin-top:40px; text-align:center;">Your average efficiency this week is <strong>92.4%</strong></p>
-            </div>
-            <div class="card">
-                <h3>Workload Health</h3>
-                <div style="text-align:center; padding:20px;">
-                    <div style="display:inline-block; position:relative; width:120px; height:120px; border-radius:50%; border:10px solid #f1f5f9; border-top-color:var(--primary-violet);">
-                        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:24px; font-weight:800;">Optimal</div>
+                <div style="text-align:center; padding:30px 20px;">
+                    <div class="capacity-circle-wrapper" style="--percent: ${Math.min(workloadPercentage, 100)}; --color: ${statusColor};">
+                        <div class="capacity-circle-inner">
+                            <div class="capacity-value">${workloadPercentage}%</div>
+                            <div class="capacity-label">${statusText}</div>
+                        </div>
                     </div>
-                    <p style="font-size:13px; color:var(--gray-600); margin-top:20px;">You are currently within the <strong>80-120% Balanced</strong> range. You are operating at peak sustainable performance.</p>
+                    <p style="font-size:14px; color:var(--gray-600); margin-top:30px; line-height:1.6;">${statusDesc}</p>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3>Project Breakdown</h3>
+                </div>
+                <div class="workload-breakdown" style="padding: 10px 0;">
+                    ${(() => {
+                        const projectHours = {};
+                        myAllTasks.forEach(t => {
+                            const pName = t.project_id?.name || 'Unknown Project';
+                            projectHours[pName] = (projectHours[pName] || 0) + (t.hours || 0);
+                        });
+                        
+                        const entries = Object.entries(projectHours);
+                        if (entries.length === 0) return '<p style="color:var(--gray-400); text-align:center; padding:20px;">No active task data.</p>';
+                        
+                        return entries.map(([name, hours]) => {
+                            const perc = totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0;
+                            return `
+                                <div style="margin-bottom:20px;">
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; font-weight:600;">
+                                        <span>${name}</span>
+                                        <span style="color:var(--primary-violet);">${hours}h (${perc}%)</span>
+                                    </div>
+                                    <div class="line-progress-bg" style="height:6px; background: #f1f5f9; border-radius: 10px; overflow: hidden;">
+                                        <div class="line-progress-fill" style="width: ${perc}%; height: 100%; background: var(--violet-gradient); border-radius: 10px;"></div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    })()}
                 </div>
             </div>
         </div>
+
+        <style>
+            .capacity-circle-wrapper {
+                position: relative;
+                width: 180px;
+                height: 180px;
+                border-radius: 50%;
+                background: conic-gradient(var(--color) calc(var(--percent) * 1%), #f1f5f9 0);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto;
+                box-shadow: var(--shadow-md);
+            }
+            .capacity-circle-inner {
+                width: 150px;
+                height: 150px;
+                background: white;
+                border-radius: 50%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            }
+            .capacity-value {
+                font-size: 32px;
+                font-weight: 800;
+                color: var(--gray-900);
+            }
+            .capacity-label {
+                font-size: 12px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: var(--color);
+                margin-top: 4px;
+            }
+        </style>
     `;
 }
+
 
 // ── Notification Dropdown Logic (Real-time Contextual) ──
 
