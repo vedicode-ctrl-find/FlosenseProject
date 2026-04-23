@@ -3,6 +3,8 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Message = require('../models/Message');
 const Project = require('../models/Project');
+const Company = require('../models/Company');
+const Employee = require('../models/Employee');
 
 // @route   POST /api/messages
 // @desc    Send a message (project, direct, or task)

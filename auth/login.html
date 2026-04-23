@@ -6,6 +6,12 @@
     <title>Login | FlowSense</title>
     <meta name="description" content="Sign in to your FlowSense dashboard — manage your team's workload intelligently.">
     <link rel="stylesheet" href="../css/style.css">
+    
+    <!-- Firebase SDK (Compat Version) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="../js/firebase-config.js"></script>
     <style>
         /* Toast Notification */
         .toast-container {
@@ -214,9 +220,54 @@
             loginBtn.disabled = true;
             loginBtn.classList.add('btn-loading');
 
-            const endpoint = currentRole === 'employee' ? '/employee/login' : '/login';
-
             try {
+                // 1. Try to sign in with Firebase Authentication
+                let user;
+                try {
+                    const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                    user = userCredential.user;
+                } catch (fbError) {
+                    // 2. If user not found in Firebase, fallback to MongoDB to check if they are an old user
+                    if (fbError.code === 'auth/user-not-found' || fbError.code === 'auth/invalid-credential') {
+                        const endpoint = currentRole === 'employee' ? '/employee/login' : '/login';
+                        const response = await fetch(`${API_URL}${endpoint}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email, password, company_code })
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            // 3. User exists in MongoDB! Let's auto-register them in Firebase now.
+                            showToast('Migrating your account to Firebase...', 'info');
+                            const newUserCred = await auth.createUserWithEmailAndPassword(email, password);
+                            user = newUserCred.user;
+                            
+                            // Continue to store session data
+                            localStorage.setItem('token', data.token);
+                            localStorage.setItem('firebaseUid', user.uid);
+                            localStorage.setItem('userRole', data.data.role);
+                            localStorage.setItem('userName', currentRole === 'employee' ? data.data.name : data.data.company_name);
+                            localStorage.setItem('userId',    data.data.id || '');
+                            localStorage.setItem('companyId', data.data.company_id || data.data.id || '');
+                            
+                            showToast(`Migration successful! Welcome back, ${localStorage.getItem('userName')}`, 'success');
+                            setTimeout(() => {
+                                const targetDash = data.data.role === 'employee' ? 'dashboard-employee.html' : 'dashboard-company.html';
+                                window.location.href = `../${targetDash}`;
+                            }, 1500);
+                            return;
+                        } else {
+                            throw fbError; // Neither Firebase nor MongoDB recognized the user
+                        }
+                    } else {
+                        throw fbError;
+                    }
+                }
+
+                // 4. If we got here, Firebase login was successful (standard flow)
+                const endpoint = currentRole === 'employee' ? '/employee/login' : '/login';
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -226,30 +277,40 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Store token and user data
                     localStorage.setItem('token', data.token);
+                    localStorage.setItem('firebaseUid', user.uid);
                     localStorage.setItem('userRole', data.data.role);
                     localStorage.setItem('userName', currentRole === 'employee' ? data.data.name : data.data.company_name);
-                    // Store userId and companyId for role-based access checks
                     localStorage.setItem('userId',    data.data.id || '');
                     localStorage.setItem('companyId', data.data.company_id || data.data.id || '');
-                    const displayName = currentRole === 'employee' ? data.data.name : data.data.company_name;
-                    showToast(`Welcome back, ${displayName}! Redirecting...`, 'success', 2000);
                     
-                    // Redirect after short delay
+                    showToast(`Welcome back, ${localStorage.getItem('userName')}!`, 'success');
                     setTimeout(() => {
                         const targetDash = data.data.role === 'employee' ? 'dashboard-employee.html' : 'dashboard-company.html';
                         window.location.href = `../${targetDash}`; 
                     }, 1500);
                 } else {
-                    showToast(data.message || 'Login failed. Please check your credentials.', 'error');
+                    showToast(data.message || 'Identity sync failed.', 'error');
                     loginBtn.innerText = originalBtnText;
                     loginBtn.disabled = false;
                     loginBtn.classList.remove('btn-loading');
                 }
             } catch (error) {
-                console.error('Login Error:', error);
-                showToast('Unable to reach the server. Please ensure the backend is running on port 5000.', 'error');
+                console.error('Full Login Error Detail:', error);
+                let errorMsg = 'Login failed. Please check your credentials.';
+                
+                if (error.code) {
+                    // Firebase specific errors
+                    if (error.code === 'auth/wrong-password') errorMsg = 'Incorrect password for this email.';
+                    if (error.code === 'auth/user-not-found') errorMsg = 'No Firebase account found. Please check your email or Sign Up.';
+                    if (error.code === 'auth/invalid-email') errorMsg = 'The email address is badly formatted.';
+                    if (error.code === 'auth/too-many-requests') errorMsg = 'Too many failed attempts. Please try again later.';
+                    if (error.code === 'auth/email-already-in-use') errorMsg = 'This email is already in use in Firebase.';
+                } else if (error.message) {
+                    errorMsg = error.message;
+                }
+                
+                showToast(errorMsg, 'error');
                 loginBtn.innerText = originalBtnText;
                 loginBtn.disabled = false;
                 loginBtn.classList.remove('btn-loading');

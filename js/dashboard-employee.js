@@ -3135,7 +3135,7 @@ let chatSelectedType = 'project'; // 'project', 'direct', 'task'
 let chatSelectedMemberId = null;
 let chatSelectedTaskId = null;
 let chatMessages = [];
-let chatPollInterval = null;
+let chatUnsubscribe = null;
 
 function toggleChatPanel(e) {
     if (e) e.stopPropagation();
@@ -3173,17 +3173,11 @@ function toggleChatPanel(e) {
             renderChatProjectSelector();
             renderChatMembersList();
         }
-
-        // Start polling
-        if (chatPollInterval) clearInterval(chatPollInterval);
-        chatPollInterval = setInterval(() => {
-            if (chatActiveProjectId) loadChatMessages(true);
-        }, 8000);
     } else {
         sheet.classList.remove('show');
         overlay.classList.remove('show');
         document.body.style.overflow = '';
-        if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+        if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
     }
 }
 
@@ -3309,35 +3303,60 @@ async function selectTaskChat(taskId, taskName, projectId) {
     await loadChatMessages();
 }
 
-async function loadChatMessages(silent = false) {
+async function loadChatMessages() {
     if (!chatActiveProjectId) return;
     
-    let url = '';
-    if (chatSelectedType === 'project') {
-        url = `/api/messages/project/${chatActiveProjectId}`;
-    } else if (chatSelectedType === 'direct') {
-        const currentUserId = localStorage.getItem('userId');
-        url = `/api/messages/direct/${chatActiveProjectId}/${currentUserId}/${chatSelectedMemberId}`;
-    } else if (chatSelectedType === 'task') {
-        url = `/api/messages/task/${chatSelectedTaskId}`;
+    // 1. Unsubscribe from previous listener if exists
+    if (chatUnsubscribe) {
+        chatUnsubscribe();
+        chatUnsubscribe = null;
     }
 
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success) {
-            const prevLen = chatMessages.length;
-            chatMessages = data.data || [];
-            renderChatMessagesList();
-            // Auto-scroll on new messages or first load
-            if (!silent || chatMessages.length > prevLen) {
-                const container = document.getElementById('chat-messages');
-                if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
-            }
-        }
-    } catch (err) {
-        console.error('Chat load failed:', err);
+    const currentUserId = localStorage.getItem('userId');
+    console.log('[CHAT DEBUG] Loading messages:', { type: chatSelectedType, projectId: chatActiveProjectId, currentUserId, targetId: chatSelectedMemberId });
+    let q = db.collection('messages');
+
+    // 2. Build Query based on Chat Type
+    if (chatSelectedType === 'project') {
+        q = q.where('projectId', '==', chatActiveProjectId)
+             .where('chatType', '==', 'project');
+    } else if (chatSelectedType === 'direct') {
+        q = q.where('projectId', '==', chatActiveProjectId)
+             .where('chatType', '==', 'direct')
+             .where('participants', 'array-contains', currentUserId);
+    } else if (chatSelectedType === 'task') {
+        q = q.where('taskId', '==', chatSelectedTaskId)
+             .where('chatType', '==', 'task');
     }
+
+    // 3. Sort and Listen Real-time
+    chatUnsubscribe = q.orderBy('timestamp', 'asc').onSnapshot(snapshot => {
+        console.log(`[CHAT DEBUG] Received ${snapshot.docs.length} raw messages from Firestore`);
+        chatMessages = snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Filter direct messages to ensure they are between current user and selected member
+            if (chatSelectedType === 'direct') {
+                const match = data.participants && data.participants.includes(chatSelectedMemberId);
+                if (!match) return null;
+            }
+            return {
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            };
+        }).filter(m => m !== null);
+
+        console.log(`[CHAT DEBUG] Showing ${chatMessages.length} messages after local filtering`);
+        renderChatMessagesList();
+        
+        // Auto-scroll to bottom
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            setTimeout(() => container.scrollTop = container.scrollHeight, 100);
+        }
+    }, err => {
+        console.error('Firestore Chat Sync Error:', err);
+    });
 }
 
 function renderChatMessagesList() {
@@ -3414,41 +3433,35 @@ async function sendChatMessage() {
     const userName = localStorage.getItem('userName') || 'User';
     const userRole = localStorage.getItem('userRole');
     const displayRole = FlowSenseState.userProfile?.display_role || (userRole === 'company' ? 'Company Lead' : 'Employee');
-    const senderModel = userRole === 'company' ? 'Company' : 'Employee';
 
+    // Build Firestore Payload
     const payload = {
         projectId: chatActiveProjectId,
         senderId: userId,
-        senderModel: senderModel,
         senderName: userName,
         senderRole: displayRole,
         message: text,
         messageType: typeSelect ? typeSelect.value : 'General',
         chatType: chatSelectedType,
-        receiverId: chatSelectedMemberId,
-        taskId: chatSelectedTaskId
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
     };
+
+    if (chatSelectedType === 'direct') {
+        payload.participants = [userId, chatSelectedMemberId];
+        payload.receiverId = chatSelectedMemberId;
+    } else if (chatSelectedType === 'task') {
+        payload.taskId = chatSelectedTaskId;
+    }
 
     input.value = '';
     input.focus();
 
     try {
-        const res = await fetch('/api/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) {
-            chatMessages.push(data.data);
-            renderChatMessagesList();
-            const container = document.getElementById('chat-messages');
-            if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
-        } else {
-            showToast(data.error || 'Failed to send message.', 'danger');
-        }
+        await db.collection('messages').add(payload);
+        // UI will update automatically via onSnapshot
     } catch (err) {
-        showToast('Network error: Message not sent.', 'danger');
+        console.error('Firestore Send Failed:', err);
+        showToast('Message delivery failed.', 'danger');
     }
 
     // Reset type select
@@ -3477,7 +3490,7 @@ window.addEventListener('click', (e) => {
             sheet.classList.remove('show');
             if (overlay) overlay.classList.remove('show');
             document.body.style.overflow = '';
-            if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+            if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
         }
     }
 });

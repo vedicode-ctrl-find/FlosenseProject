@@ -2399,7 +2399,7 @@ let chatSelectedType = 'project'; // 'project', 'direct', 'task'
 let chatSelectedMemberId = null;
 let chatSelectedTaskId = null;
 let chatMessages = [];
-let chatPollInterval = null;
+let chatUnsubscribe = null;
 
 function toggleChatPanel(e) {
     if (e) e.stopPropagation();
@@ -2438,16 +2438,11 @@ function toggleChatPanel(e) {
             renderChatMembersList();
         }
 
-        // Start polling
-        if (chatPollInterval) clearInterval(chatPollInterval);
-        chatPollInterval = setInterval(() => {
-            if (chatActiveProjectId) loadChatMessages(true);
-        }, 8000);
     } else {
         sheet.classList.remove('show');
         overlay.classList.remove('show');
         document.body.style.overflow = '';
-        if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+        if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
     }
 }
 
@@ -2557,36 +2552,60 @@ async function selectDirectChat(memberId, memberName) {
     await loadChatMessages();
 }
 
-async function loadChatMessages(silent = false) {
+async function loadChatMessages() {
     if (!chatActiveProjectId) return;
     
-    let url = '';
-    const apiBase = 'http://localhost:5000';
-    if (chatSelectedType === 'project') {
-        url = `${apiBase}/api/messages/project/${chatActiveProjectId}`;
-    } else if (chatSelectedType === 'direct') {
-        const currentUserId = localStorage.getItem('userId');
-        url = `${apiBase}/api/messages/direct/${chatActiveProjectId}/${currentUserId}/${chatSelectedMemberId}`;
-    } else if (chatSelectedType === 'task') {
-        url = `${apiBase}/api/messages/task/${chatSelectedTaskId}`;
+    // 1. Unsubscribe from previous listener if exists
+    if (chatUnsubscribe) {
+        chatUnsubscribe();
+        chatUnsubscribe = null;
     }
 
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success) {
-            const prevLen = chatMessages.length;
-            chatMessages = data.data || [];
-            renderChatMessagesList();
-            // Auto-scroll on new messages or first load
-            if (!silent || chatMessages.length > prevLen) {
-                const container = document.getElementById('chat-messages');
-                if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
-            }
-        }
-    } catch (err) {
-        console.error('Chat load failed:', err);
+    const currentUserId = localStorage.getItem('userId');
+    console.log('[CHAT DEBUG] Loading messages:', { type: chatSelectedType, projectId: chatActiveProjectId, currentUserId, targetId: chatSelectedMemberId });
+    let q = db.collection('messages');
+
+    // 2. Build Query based on Chat Type
+    if (chatSelectedType === 'project') {
+        q = q.where('projectId', '==', chatActiveProjectId)
+             .where('chatType', '==', 'project');
+    } else if (chatSelectedType === 'direct') {
+        q = q.where('projectId', '==', chatActiveProjectId)
+             .where('chatType', '==', 'direct')
+             .where('participants', 'array-contains', currentUserId);
+    } else if (chatSelectedType === 'task') {
+        q = q.where('taskId', '==', chatSelectedTaskId)
+             .where('chatType', '==', 'task');
     }
+
+    // 3. Sort and Listen Real-time
+    chatUnsubscribe = q.orderBy('timestamp', 'asc').onSnapshot(snapshot => {
+        console.log(`[CHAT DEBUG] Received ${snapshot.docs.length} raw messages from Firestore`);
+        chatMessages = snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Filter direct messages to ensure they are between current user and selected member
+            if (chatSelectedType === 'direct') {
+                const match = data.participants && data.participants.includes(chatSelectedMemberId);
+                if (!match) return null;
+            }
+            return {
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            };
+        }).filter(m => m !== null);
+
+        console.log(`[CHAT DEBUG] Showing ${chatMessages.length} messages after local filtering`);
+        renderChatMessagesList();
+        
+        // Auto-scroll to bottom
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            setTimeout(() => container.scrollTop = container.scrollHeight, 100);
+        }
+    }, err => {
+        console.error('Firestore Chat Sync Error:', err);
+    });
 }
 
 function renderChatMessagesList() {
@@ -2663,41 +2682,35 @@ async function sendChatMessage() {
     const userName = localStorage.getItem('userName') || 'User';
     const userRole = localStorage.getItem('userRole');
     const displayRole = FlowSenseState.userProfile?.display_role || (userRole === 'company' ? 'Company Lead' : 'Employee');
-    const senderModel = userRole === 'company' ? 'Company' : 'Employee';
 
+    // Build Firestore Payload
     const payload = {
         projectId: chatActiveProjectId,
         senderId: userId,
-        senderModel: senderModel,
         senderName: userName,
         senderRole: displayRole,
         message: text,
         messageType: typeSelect ? typeSelect.value : 'General',
         chatType: chatSelectedType,
-        receiverId: chatSelectedMemberId,
-        taskId: chatSelectedTaskId
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
     };
+
+    if (chatSelectedType === 'direct') {
+        payload.participants = [userId, chatSelectedMemberId];
+        payload.receiverId = chatSelectedMemberId;
+    } else if (chatSelectedType === 'task') {
+        payload.taskId = chatSelectedTaskId;
+    }
 
     input.value = '';
     input.focus();
 
     try {
-        const res = await fetch('http://localhost:5000/api/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) {
-            chatMessages.push(data.data);
-            renderChatMessagesList();
-            const container = document.getElementById('chat-messages');
-            if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
-        } else {
-            showToast(data.error || 'Failed to send message.', 'danger');
-        }
+        await db.collection('messages').add(payload);
+        // UI will update automatically via onSnapshot
     } catch (err) {
-        showToast('Network error: Message not sent.', 'danger');
+        console.error('Firestore Send Failed:', err);
+        showToast('Message delivery failed.', 'danger');
     }
 
     // Reset type select
@@ -2714,7 +2727,7 @@ window.onChatOutsideClick = function(e) {
             sheet.classList.remove('show');
             if (overlay) overlay.classList.remove('show');
             document.body.style.overflow = '';
-            if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+            if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
         }
     }
 };
@@ -2736,3 +2749,119 @@ window.addEventListener('click', (e) => {
     }
 });
 
+async function runDataMigration() {
+    if (!confirm("This will migrate all Chat, Company, and Employee data from MongoDB to Firebase Firestore. Continue?")) return;
+
+    showToast("Starting full data migration...", "info");
+    
+    const modal = document.createElement('div');
+    modal.style = "position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:var(--white); padding:30px; border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,0.3); z-index:10000; width:400px; text-align:center;";
+    modal.innerHTML = `
+        <h3 style="margin-bottom:15px; color:var(--primary-violet);">Data Synchronizer</h3>
+        <p id="mig-status" style="font-size:14px; color:var(--gray-600); margin-bottom:20px;">Fetching archives from MongoDB...</p>
+        <div style="height:8px; background:var(--gray-100); border-radius:4px; overflow:hidden; margin-bottom:15px;">
+            <div id="mig-progress" style="width:0%; height:100%; background:var(--primary-violet); transition:width 0.3s;"></div>
+        </div>
+        <p id="mig-count" style="font-size:12px; color:var(--gray-400);">Processing Intelligence...</p>
+    `;
+    document.body.appendChild(modal);
+
+    const overlay = document.createElement('div');
+    overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999;";
+    document.body.appendChild(overlay);
+
+    const updateUI = (status, current, total, percent) => {
+        document.getElementById('mig-status').textContent = status;
+        document.getElementById('mig-count').textContent = `${current} / ${total}`;
+        document.getElementById('mig-progress').style.width = `${percent}%`;
+    };
+
+    try {
+        // --- 1. Migrate Companies ---
+        document.getElementById('mig-status').textContent = "Migrating Company Profiles...";
+        const compRes = await fetch('http://localhost:5000/api/messages/companies');
+        const compData = await compRes.json();
+        if (compData.success) {
+            let c = 0;
+            for (const comp of compData.data) {
+                const { password, ...safeComp } = comp; // Don't store hashed password in Firestore
+                await db.collection('companies').doc(String(comp._id)).set({
+                    ...safeComp,
+                    id: String(comp._id),
+                    role: 'company',
+                    migrated_at: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                c++;
+                updateUI("Migrating Companies...", c, compData.data.length, (c/compData.data.length)*100);
+            }
+        }
+
+        // --- 2. Migrate Employees ---
+        document.getElementById('mig-status').textContent = "Migrating Employee Profiles...";
+        const empRes = await fetch('http://localhost:5000/api/messages/employees');
+        const empData = await empRes.json();
+        if (empData.success) {
+            let e = 0;
+            for (const emp of empData.data) {
+                const { password, ...safeEmp } = emp;
+                await db.collection('employees').doc(String(emp._id)).set({
+                    ...safeEmp,
+                    id: String(emp._id),
+                    role: 'employee',
+                    migrated_at: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                e++;
+                updateUI("Migrating Employees...", e, empData.data.length, (e/empData.data.length)*100);
+            }
+        }
+
+        // --- 3. Migrate Messages ---
+        document.getElementById('mig-status').textContent = "Migrating Chat Archives...";
+        const msgRes = await fetch('http://localhost:5000/api/messages/all');
+        const msgData = await msgRes.json();
+        if (msgData.success) {
+            let m = 0;
+            const total = msgData.data.length;
+            for (const msg of msgData.data) {
+                const payload = {
+                    projectId: String(msg.projectId),
+                    senderId: String(msg.senderId),
+                    senderName: msg.senderName,
+                    senderRole: msg.senderRole,
+                    message: msg.message,
+                    messageType: msg.messageType || 'General',
+                    chatType: msg.chatType,
+                    timestamp: msg.timestamp ? new Date(msg.timestamp) : firebase.firestore.FieldValue.serverTimestamp()
+                };
+                if (msg.chatType === 'direct') {
+                    payload.participants = [String(msg.senderId), String(msg.receiverId)];
+                    payload.receiverId = String(msg.receiverId);
+                } else if (msg.chatType === 'task') {
+                    payload.taskId = String(msg.taskId);
+                }
+                await db.collection('messages').add(payload);
+                m++;
+                updateUI("Migrating Messages...", m, total, (m/total)*100);
+            }
+        }
+
+        document.getElementById('mig-status').textContent = "Full Migration Complete!";
+        document.getElementById('mig-status').style.color = "#10b981";
+        showToast("Profiles and Chat migrated successfully!", "success");
+        
+        setTimeout(() => {
+            modal.remove();
+            overlay.remove();
+            location.reload();
+        }, 2000);
+
+    } catch (err) {
+        console.error('Migration failed:', err);
+        document.getElementById('mig-status').textContent = "Migration Failed: " + err.message;
+        document.getElementById('mig-status').style.color = "#ef4444";
+        setTimeout(() => {
+            modal.remove();
+            overlay.remove();
+        }, 5000);
+    }
+}
