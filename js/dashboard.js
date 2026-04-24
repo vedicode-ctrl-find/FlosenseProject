@@ -288,6 +288,11 @@ function renderCompanySidebar() {
             <i class="fas fa-chart-line"></i>
             <span>Insights</span>
         </a>
+        <a href="ai-assistant.html" class="nav-item" style="margin-top:8px; border:1px solid rgba(99,102,241,0.25); background:rgba(99,102,241,0.08);">
+            <i class="fas fa-robot" style="color:#a5b4fc;"></i>
+            <span style="color:#a5b4fc;">AI Assistant</span>
+            <span style="margin-left:auto; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:20px;">NEW</span>
+        </a>
     `;
 }
 

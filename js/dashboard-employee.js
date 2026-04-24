@@ -308,23 +308,24 @@ function renderCompanySidebar() {
     nav.innerHTML = `
         <a href="#" class="nav-item active" data-view="overview" onclick="loadView('overview')">
             <i class="fas fa-th-large"></i>
-            <span>Executive Board</span>
+            <span>Dashboard</span>
         </a>
         <a href="#" class="nav-item" data-view="projects" onclick="loadView('projects')">
             <i class="fas fa-project-diagram"></i>
-            <span>Project Index</span>
-        </a>
-        <a href="#" class="nav-item" data-view="tasks" onclick="loadView('tasks')">
-            <i class="fas fa-tasks"></i>
-            <span>My Objectives</span>
+            <span>Projects</span>
         </a>
         <a href="#" class="nav-item" data-view="team" onclick="loadView('team')">
-            <i class="fas fa-users-cog"></i>
-            <span>Lead Hub</span>
+            <i class="fas fa-users"></i>
+            <span>Team Hub</span>
         </a>
         <a href="#" class="nav-item" data-view="performance" onclick="loadView('performance')">
             <i class="fas fa-chart-line"></i>
             <span>Insights</span>
+        </a>
+        <a href="ai-assistant.html" class="nav-item" style="margin-top:8px; border:1px solid rgba(99,102,241,0.25); background:rgba(99,102,241,0.08);">
+            <i class="fas fa-robot" style="color:#a5b4fc;"></i>
+            <span style="color:#a5b4fc;">AI Assistant</span>
+            <span style="margin-left:auto; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:20px;">NEW</span>
         </a>
     `;
 }

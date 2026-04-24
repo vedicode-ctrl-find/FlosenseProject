@@ -154,6 +154,7 @@ function handleAssigneeSelect(e) {
     const empId   = e.target.value;
     const alertBox = document.getElementById('smart-feedback-alert');
     const hours    = parseInt(document.getElementById('task-hours').value) || 0;
+    const requiredSkill = document.getElementById('task-skill').value;
 
     if (!empId) {
         alertBox.className = 'feedback-alert hidden';
@@ -163,32 +164,48 @@ function handleAssigneeSelect(e) {
     const emp = employeesData.find(e => e._id === empId);
     if (!emp) return;
 
-    const currentWorkload  = emp.workload_percentage || 0;
-    const projectedAdd     = (hours / 40) * 100;
-    const totalWorkload    = currentWorkload + projectedAdd;
+    // Calculate Match Score for selected employee
+    let skillScore = (emp.skills && emp.skills.includes(requiredSkill)) ? 40 : 0;
+    const currentWL = emp.workload_percentage || 0;
+    const projectedWL = currentWL + ((hours / 40) * 100);
+    let capacityScore = projectedWL <= 80 ? 40 : (projectedWL <= 100 ? 20 : Math.max(0, 40 - (projectedWL - 100)));
+    const efficiencyScore = (emp.efficiency || 100) / 5;
+    const totalScore = Math.round(skillScore + capacityScore + efficiencyScore);
 
     alertBox.classList.remove('hidden', 'red', 'yellow', 'green');
     const textEl = alertBox.querySelector('.alert-text');
 
-    if (totalWorkload > 120) {
+    let feedbackText = `<strong>Match Score: ${totalScore}%</strong> — `;
+
+    if (projectedWL > 120) {
         alertBox.classList.add('red');
-        textEl.innerText = `⚠ This employee will reach ${Math.round(totalWorkload)}% workload. Assigning may cause severe delays.`;
-    } else if (totalWorkload >= 80) {
+        feedbackText += `⚠ Severe Overload: ${Math.round(projectedWL)}% workload.`;
+    } else if (projectedWL >= 100) {
         alertBox.classList.add('yellow');
-        textEl.innerText = `This employee is moderately loaded (Projected: ${Math.round(totalWorkload)}%).`;
+        feedbackText += `High Load: ${Math.round(projectedWL)}% workload.`;
     } else {
         alertBox.classList.add('green');
-        textEl.innerText = `✓ Good choice — employee is available. (Projected: ${Math.round(totalWorkload)}%).`;
+        feedbackText += `Available: ${Math.round(projectedWL)}% workload.`;
     }
+
+    if (requiredSkill && !emp.skills.includes(requiredSkill)) {
+        feedbackText += ` <br><span style="font-size:11px;">Note: Missing required skill "${requiredSkill}"</span>`;
+    }
+
+    textEl.innerHTML = feedbackText;
 }
 
 // ── Smart Suggestions Panel ──
-function generateSmartSuggestions() {
+async function generateSmartSuggestions() {
+    console.log('DEBUG: generateSmartSuggestions called');
     const requiredSkill = document.getElementById('task-skill').value;
     const hours         = parseInt(document.getElementById('task-hours').value) || 0;
+    const projectId     = document.getElementById('task-project').value;
     const panel         = document.getElementById('smart-suggestions-list');
 
-    if (employeesData.length === 0) {
+    console.log('DEBUG: Values:', { requiredSkill, hours, projectId });
+
+    if (!projectId) {
         panel.innerHTML = '<p class="empty-state">Select a project first to see team member recommendations.</p>';
         return;
     }
@@ -199,48 +216,62 @@ function generateSmartSuggestions() {
         return;
     }
 
-    // Filter by skill
-    let candidates = employeesData.filter(emp => emp.skills && emp.skills.includes(requiredSkill));
+    panel.innerHTML = '<div class="loading-mini">AI is analyzing team bandwidth...</div>';
 
-    if (candidates.length === 0) {
-        panel.innerHTML = `<p class="empty-state">No team members with skill "${requiredSkill}". Showing all members by workload.</p>`;
-        candidates = [...employeesData];
+    try {
+        const res = await fetch('/api/recommend/recommend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_id: projectId,
+                required_skills: [requiredSkill],
+                estimated_hours: hours
+            })
+        });
+        const data = await res.json();
+
+        if (!data.success || !data.data || data.data.length === 0) {
+            panel.innerHTML = '<p class="empty-state">No suitable recommendations found for this task.</p>';
+            return;
+        }
+
+        const candidates = data.data;
+        bestAlternative = candidates[0]; // For the overload modal logic
+        panel.innerHTML = '';
+
+        candidates.forEach((emp, index) => {
+            const isBest = index === 0;
+            const cls    = isBest ? 'suggestion-card high-match' : 'suggestion-card';
+
+            panel.innerHTML += `
+                <div class="${cls}">
+                    <div class="sc-header">
+                        <div class="sc-profile">
+                            <span class="sc-name">${emp.name}</span>
+                            <span class="sc-role">${emp.role}</span>
+                        </div>
+                        <div class="match-score-ring" style="--score: ${emp.matchScore}%">
+                            <span class="score-val">${emp.matchScore}</span>
+                            <span class="score-label">MATCH</span>
+                        </div>
+                    </div>
+                    <div class="sc-analysis">
+                        <i class="fas fa-robot" style="margin-right:6px; color:var(--primary-600);"></i> 
+                        ${emp.analysis}
+                    </div>
+                    <div class="sc-actions">
+                        <button type="button" class="btn-assign-smart" onclick="selectSuggestedEmployee('${emp.id}')">
+                            ${isBest ? '✦ Best Match: Assign Now' : 'Assign Employee'}
+                        </button>
+                        ${isBest ? '<button type="button" class="btn-ignore" onclick="ignoreSuggestion(this)">Skip</button>' : ''}
+                    </div>
+                </div>
+            `;
+        });
+    } catch (err) {
+        console.error('Failed to fetch recommendations:', err);
+        panel.innerHTML = '<p class="empty-state">Error generating recommendations. Please try again.</p>';
     }
-
-    // Sort: lowest workload first, then highest efficiency
-    candidates.sort((a, b) => {
-        const wa = a.workload_percentage || 0;
-        const wb = b.workload_percentage || 0;
-        if (wa !== wb) return wa - wb;
-        return (b.efficiency || 100) - (a.efficiency || 100);
-    });
-
-    bestAlternative = candidates[0];
-    panel.innerHTML = '';
-
-    candidates.slice(0, 3).forEach((emp, index) => {
-        const isBest = index === 0;
-        const cls    = isBest ? 'suggestion-card high-efficiency' : 'suggestion-card';
-        const wl     = emp.workload_percentage || 0;
-
-        panel.innerHTML += `
-            <div class="${cls}">
-                <div class="sc-header">
-                    <span class="sc-name">${emp.name}</span>
-                    <span class="sc-badge">${Math.round(wl)}% Workload</span>
-                </div>
-                <div class="sc-info">
-                    ${emp.role} • ${emp.efficiency || 100}% Efficiency
-                </div>
-                <div class="sc-actions">
-                    <button type="button" class="btn-outline assign-btn" onclick="selectSuggestedEmployee('${emp._id}')">
-                        ${isBest ? '✦ Assign Instead' : 'Assign'}
-                    </button>
-                    ${isBest ? '<button type="button" class="btn-outline" onclick="ignoreSuggestion(this)">Ignore</button>' : ''}
-                </div>
-            </div>
-        `;
-    });
 }
 
 window.selectSuggestedEmployee = function(empId) {

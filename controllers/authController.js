@@ -50,6 +50,7 @@ exports.signup = async (req, res) => {
             });
         }
     } catch (error) {
+        console.error('SIGNUP ERROR:', error);
         res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
     }
 };
@@ -94,6 +95,7 @@ exports.login = async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('LOGIN ERROR:', error);
         res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
     }
 };
@@ -149,6 +151,7 @@ exports.employeeSignup = async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('EMPLOYEE SIGNUP ERROR:', error);
         res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
     }
 };
@@ -197,6 +200,7 @@ exports.employeeLogin = async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('EMPLOYEE LOGIN ERROR:', error);
         res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
     }
 };

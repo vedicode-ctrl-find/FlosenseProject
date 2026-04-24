@@ -162,6 +162,11 @@ function renderCompanySidebar() {
             <i class="fas fa-chart-line"></i>
             <span>Insights</span>
         </a>
+        <a href="ai-assistant.html" class="nav-item" style="margin-top:8px; border:1px solid rgba(99,102,241,0.25); background:rgba(99,102,241,0.08);">
+            <i class="fas fa-robot" style="color:#a5b4fc;"></i>
+            <span style="color:#a5b4fc;">AI Assistant</span>
+            <span style="margin-left:auto; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:20px;">NEW</span>
+        </a>
     `;
 }
 
@@ -183,6 +188,11 @@ function renderEmployeeSidebar() {
         <a href="#" class="nav-item" data-view="team" onclick="loadView('team')">
             <i class="fas fa-users"></i>
             <span>Team Hub</span>
+        </a>
+        <a href="ai-assistant.html" class="nav-item" style="margin-top:8px; border:1px solid rgba(99,102,241,0.25); background:rgba(99,102,241,0.08);">
+            <i class="fas fa-robot" style="color:#a5b4fc;"></i>
+            <span style="color:#a5b4fc;">AI Assistant</span>
+            <span style="margin-left:auto; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:20px;">NEW</span>
         </a>
     `;
 }
@@ -1012,60 +1022,191 @@ function renderTasksView(container) {
     container.innerHTML = `
         <div class="welcome-header">
             <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Task Optimizer</h2>
-            <p style="color: var(--gray-600); font-weight: 500;">Smart task allocation engine with real-time overload detection.</p>
+            <p style="color: var(--gray-600); font-weight: 500;">AI-powered task allocation engine with Skill & Capacity analysis.</p>
         </div>
 
-        <div class="dashboard-grid" style="grid-template-columns: 350px 1fr; gap: 32px; align-items: start;">
+        <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;">
+            <!-- Left: Assignment Form -->
             <div class="card hover-lift" style="padding: 28px; background: rgba(255,255,255,0.5);">
-                <h3 style="margin-bottom:24px; font-size:18px; font-weight:800; color:var(--gray-900);">New Assignment</h3>
-                <form onsubmit="handleTaskAssignment(event)">
+                <h3 style="margin-bottom:24px; font-size:18px; font-weight:800; color:var(--gray-900); display:flex; align-items:center; gap:10px;">
+                    <i class="fas fa-plus-circle" style="color:var(--primary-violet);"></i> New Assignment
+                </h3>
+                <form id="optimizer-task-form" onsubmit="handleTaskAssignment(event)">
                     <div class="form-group">
                         <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Task Name</label>
-                        <input type="text" id="t-name" class="styled-input" placeholder="e.g. Design System" required style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none; transition:all 0.3s;">
+                        <input type="text" id="t-name" class="styled-input" placeholder="e.g. Backend Refactoring" required style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none;">
                     </div>
-                    <div class="form-group">
-                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Hours Required</label>
-                        <input type="number" id="t-hours" class="styled-input" value="10" required style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none; transition:all 0.3s;">
+                    
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                        <div class="form-group">
+                            <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Skill Required</label>
+                            <select id="t-skill" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none;" onchange="updateSmartMatch()">
+                                <option value="">-- Select Skill --</option>
+                                <option value="Frontend">Frontend</option>
+                                <option value="Backend">Backend</option>
+                                <option value="Designer">Designer</option>
+                                <option value="Tester">Tester</option>
+                                <option value="DevOps">DevOps</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Hours (Effort)</label>
+                            <input type="number" id="t-hours" class="styled-input" value="10" min="1" required style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none;" oninput="updateSmartMatch()">
+                        </div>
                     </div>
+
                     <div class="form-group">
-                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Project</label>
-                        <select id="t-project" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none; transition:all 0.3s;">
-                            ${FlowSenseState.projects.map(p => `<option>${p.name}</option>`).join('')}
+                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Project Stream</label>
+                        <select id="t-project" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:20px; font-weight:600; outline:none;">
+                            ${FlowSenseState.projects.map(p => `<option value="${p._id}">${p.name}</option>`).join('')}
                         </select>
                     </div>
+
                     <div class="form-group">
-                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Assignee</label>
-                        <select id="t-assignee" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:24px; font-weight:600; outline:none; transition:all 0.3s;" onchange="checkTaskOverload(this.value)">
-                            ${FlowSenseState.employees.map(e => `<option value="${e.id}">${e.name} (${Math.round(e.workload)}%)</option>`).join('')}
+                        <label style="font-size:12px; font-weight:700; color:var(--gray-600); margin-bottom:8px; display:block;">Manually Assign</label>
+                        <select id="t-assignee" class="styled-input" style="width:100%; padding:14px 18px; border:1px solid rgba(255,255,255,0.6); background:var(--surface-glass); backdrop-filter:blur(10px); border-radius:12px; margin-bottom:24px; font-weight:600; outline:none;" onchange="checkTaskOverload(this.value)">
+                            <option value="">-- Choose Candidate --</option>
+                            ${FlowSenseState.employees.map(e => `<option value="${e._id || e.id}">${e.name} (${e.workload_percentage || 0}%)</option>`).join('')}
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>Priority</label>
-                        <select id="t-priority" class="styled-input" style="width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:15px;">
-                            <option value="Low">Low</option>
-                            <option value="Medium" selected>Medium</option>
-                            <option value="High">High</option>
-                        </select>
-                    </div>
+
                     <div id="smart-alert-container"></div>
-                    <button class="btn btn-primary" style="margin-top:10px; width:100%; padding:14px; font-size:14px; border-radius:14px;">Assign Task</button>
+                    <button type="submit" class="btn btn-primary" style="margin-top:10px; width:100%; padding:16px; font-size:15px; border-radius:14px; font-weight:700; box-shadow:var(--shadow-premium);">Assign Task</button>
                 </form>
             </div>
 
-            <div class="card hover-lift" style="padding:0; overflow:hidden;">
-                <div style="padding:24px 28px; background:rgba(255,255,255,0.6); border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0; font-size:18px; font-weight:800; color:var(--gray-900);">Pending Tasks</h3>
+            <!-- Right: Smart Match Recommendations -->
+            <div class="card hover-lift" style="padding: 28px; background: rgba(255,255,255,0.8);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+                    <h3 style="font-size:18px; font-weight:800; color:var(--gray-900); display:flex; align-items:center; gap:10px;">
+                        <i class="fas fa-magic" style="color:#7c3aed;"></i> AI Smart Match
+                    </h3>
+                    <span style="font-size:11px; font-weight:800; color:var(--gray-400); text-transform:uppercase; letter-spacing:1px;">Top 3 Candidates</span>
                 </div>
-                <div style="padding:10px 20px;">
-                    ${FlowSenseState.tasks.map(t => {
-                        const emp = FlowSenseState.employees.find(e => e.id === t.assigneeId);
-                        return renderTaskItem(t.title, t.projectName, emp ? emp.name : 'Unknown', t.deadline, t.status);
-                    }).join('')}
+                <div id="smart-match-results">
+                    <div style="text-align:center; padding:60px 20px; color:var(--gray-400);">
+                        <i class="fas fa-brain" style="font-size:32px; margin-bottom:16px; opacity:0.3;"></i>
+                        <p style="font-size:13px; font-weight:600;">Enter task details and skill requirement to generate AI recommendations.</p>
+                    </div>
                 </div>
             </div>
         </div>
     `;
 }
+
+// ── Smart Match Core Logic ──
+
+window.updateSmartMatch = function() {
+    const skill = document.getElementById('t-skill').value;
+    const hours = parseInt(document.getElementById('t-hours').value) || 0;
+    const resultsContainer = document.getElementById('smart-match-results');
+
+    if (!skill || hours <= 0) return;
+
+    const candidates = FlowSenseState.employees.map(emp => {
+        let score = 0;
+        let analysis = [];
+
+        // Skill Match (40 pts)
+        if (emp.skills && emp.skills.includes(skill)) {
+            score += 40;
+            analysis.push(`<span class="match-tag green"><i class="fas fa-check"></i> Skill: ${skill}</span>`);
+        } else {
+            analysis.push(`<span class="match-tag red"><i class="fas fa-times"></i> Missing: ${skill}</span>`);
+        }
+
+        // Capacity Match (40 pts)
+        const currentWL = emp.workload_percentage || 0;
+        const projectedWL = currentWL + (hours * 2.5);
+        if (projectedWL <= 80) {
+            score += 40;
+            analysis.push(`<span class="match-tag blue"><i class="fas fa-bolt"></i> High Bandwidth</span>`);
+        } else if (projectedWL <= 100) {
+            score += 20;
+            analysis.push(`<span class="match-tag yellow"><i class="fas fa-info-circle"></i> Balanced</span>`);
+        } else {
+            score += Math.max(0, 40 - (projectedWL - 100));
+            analysis.push(`<span class="match-tag red"><i class="fas fa-exclamation"></i> Workload Risk</span>`);
+        }
+
+        // Efficiency (20 pts)
+        const efficiency = emp.efficiency || 100;
+        score += (efficiency / 5);
+        if (efficiency > 100) analysis.push(`<span class="match-tag purple"><i class="fas fa-star"></i> High Performer</span>`);
+
+        return { ...emp, matchScore: Math.round(score), analysis };
+    });
+
+    // Sort by match score
+    candidates.sort((a, b) => b.matchScore - a.matchScore);
+
+    resultsContainer.innerHTML = candidates.slice(0, 3).map((emp, idx) => `
+        <div class="smart-match-card ${idx === 0 ? 'best' : ''}" onclick="applySmartAssignment('${emp._id || emp.id}')">
+            <div class="sm-header">
+                <div class="sm-user">
+                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=${idx === 0 ? '7c3aed' : '8b5cf6'}&color=fff">
+                    <div>
+                        <div class="sm-name">${emp.name}</div>
+                        <div class="sm-role">${emp.role}</div>
+                    </div>
+                </div>
+                <div class="sm-score">
+                    <div class="score-ring" style="--p:${emp.matchScore}">
+                        <span>${emp.matchScore}%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="sm-analysis" style="display:flex; flex-wrap:wrap; gap:6px; margin:12px 0;">
+                ${emp.analysis.join('')}
+            </div>
+            <div class="sm-footer">
+                <button class="btn-sm-action" style="width:100%; padding:8px; border-radius:8px; border:1px solid #7c3aed; color:#7c3aed; background:transparent; font-weight:700; cursor:pointer;">SELECT CANDIDATE</button>
+            </div>
+        </div>
+    `).join('');
+};
+
+window.applySmartAssignment = function(empId) {
+    document.getElementById('t-assignee').value = empId;
+    showToast('Smart selection applied to form.', 'success');
+    checkTaskOverload(empId);
+};
+
+window.checkTaskOverload = function(empId) {
+    const alertContainer = document.getElementById('smart-alert-container');
+    const hours = parseInt(document.getElementById('t-hours').value) || 0;
+    
+    if (!empId) {
+        alertContainer.innerHTML = '';
+        return;
+    }
+
+    const emp = FlowSenseState.employees.find(e => (e._id === empId || e.id === empId));
+    if (!emp) return;
+
+    const currentWL = emp.workload_percentage || 0;
+    const projectedWL = currentWL + (hours * 2.5);
+    
+    if (projectedWL > 120) {
+        alertContainer.innerHTML = `
+            <div class="alert-box danger" style="margin-bottom:20px; font-size:12px; display:flex; gap:10px; align-items:center; padding:12px; background:#fee2e2; color:#b91c1c; border-radius:10px;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div><strong>Overload Warning:</strong> ${emp.name} will reach ${Math.round(projectedWL)}% workload.</div>
+            </div>`;
+    } else if (projectedWL > 100) {
+        alertContainer.innerHTML = `
+            <div class="alert-box warning" style="margin-bottom:20px; font-size:12px; display:flex; gap:10px; align-items:center; padding:12px; background:#fef3c7; color:#92400e; border-radius:10px;">
+                <i class="fas fa-info-circle"></i>
+                <div><strong>High Load:</strong> ${emp.name} will be at ${Math.round(projectedWL)}% capacity.</div>
+            </div>`;
+    } else {
+        alertContainer.innerHTML = `
+            <div class="alert-box success" style="margin-bottom:20px; font-size:12px; display:flex; gap:10px; align-items:center; padding:12px; background:#dcfce7; color:#15803d; border-radius:10px;">
+                <i class="fas fa-check-circle"></i>
+                <div><strong>Optimal Choice:</strong> ${emp.name} has sufficient bandwidth.</div>
+            </div>`;
+    }
+};
 
 // ── Shared UI Renderers ──
 

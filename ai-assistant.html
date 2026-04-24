@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Assistant | FlowSense</title>
+    <meta name="description" content="Ask anything about your team, projects, and tasks. FlowSense AI provides instant, data-driven answers.">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/ai-assistant.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <img src="logo.png" alt="FlowSense Logo" class="logo-img">
+            <span>FlowSense</span>
+        </div>
+        
+        <nav class="sidebar-nav" id="sidebar-nav">
+            <a href="dashboard-company.html" class="nav-item">
+                <i class="fas fa-th-large"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="dashboard-company.html" class="nav-item">
+                <i class="fas fa-project-diagram"></i>
+                <span>Projects</span>
+            </a>
+            <a href="dashboard-company.html" class="nav-item">
+                <i class="fas fa-users"></i>
+                <span>Team Hub</span>
+            </a>
+            <a href="dashboard-company.html" class="nav-item">
+                <i class="fas fa-chart-line"></i>
+                <span>Insights</span>
+            </a>
+            <a href="ai-assistant.html" class="nav-item active">
+                <i class="fas fa-robot"></i>
+                <span>AI Assistant</span>
+                <span style="margin-left:auto; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:20px; border: 1px solid rgba(255,255,255,0.4);">NEW</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="profile-trigger" id="profile-trigger" onclick="toggleProfileSheet(event)" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                <div class="avatar-wrapper" style="width:40px; height:40px; border-radius:50%; overflow:hidden;">
+                    <img src="https://ui-avatars.com/api/?name=User&background=8b5cf6&color=fff" alt="User" id="user-avatar" style="width:100%; height:100%; object-fit:cover;">
+                </div>
+                <div class="user-info">
+                    <p class="user-name" id="display-name" style="font-size:14px; font-weight:600; color:var(--gray-900); margin:0;">Loading...</p>
+                    <p class="user-role" id="display-role" style="font-size:12px; color:var(--gray-600); margin:0;">Role</p>
+                </div>
+            </div>
+            
+            <button class="footer-logout-btn" onclick="logout(event)" title="Sign Out" style="background:none; border:none; color:var(--gray-600); cursor:pointer; font-size:18px; margin-left:auto; transition:color 0.2s;">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- ── Main ── -->
+    <main class="ai-main">
+
+        <!-- Header -->
+        <div class="ai-header">
+            <div class="ai-header-inner">
+                <div class="ai-title-block">
+                    <div class="ai-icon-wrap">✦</div>
+                    <div>
+                        <h1>FlowSense <span>AI Assistant</span></h1>
+                        <p>Ask anything about your team, projects, or tasks in plain English.</p>
+                    </div>
+                </div>
+                <div class="ai-status">
+                    <div class="status-dot"></div>
+                    Gemini Powered
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Query Chips -->
+        <div class="quick-queries">
+            <span class="quick-label">Try asking:</span>
+            <button class="quick-chip" onclick="useChip('Who is overloaded right now?')">Who is overloaded?</button>
+            <button class="quick-chip" onclick="useChip('Who can take a React task for 8 hours?')">Who can take React task?</button>
+            <button class="quick-chip" onclick="useChip('Show all delayed tasks')">Delayed tasks</button>
+            <button class="quick-chip" onclick="useChip('Which project has the lowest progress?')">Lowest progress project?</button>
+            <button class="quick-chip" onclick="useChip('Who is the best performer in the team?')">Best performer?</button>
+            <button class="quick-chip" onclick="useChip('List employees with less than 50% workload')">Free employees?</button>
+        </div>
+
+        <!-- Chat Window -->
+        <div class="chat-window" id="chat-window">
+
+            <!-- Welcome State -->
+            <div class="welcome-msg" id="welcome-block">
+                <div class="welcome-orb">✦</div>
+                <h2>Your AI Team Intelligence</h2>
+                <p>Powered by Gemini AI and your live MongoDB data. Ask questions about workload, skills, task delays, or team performance — in plain English.</p>
+            </div>
+
+        </div>
+
+        <!-- Input Bar -->
+        <div class="ai-input-bar">
+            <div class="input-wrap">
+                <textarea
+                    id="query-input"
+                    rows="1"
+                    placeholder="Ask anything about your team or project… (Enter to send, Shift+Enter for new line)"
+                ></textarea>
+                <button class="send-btn" id="send-btn" onclick="submitQuery()" title="Analyze">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="input-hint">
+                ✦ Responses are generated using your live project data via Gemini AI &nbsp;·&nbsp; 
+                <kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; font-size:10px;">Enter</kbd> to send &nbsp;·&nbsp; 
+                <kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; font-size:10px;">Shift+Enter</kbd> for new line
+            </div>
+        </div>
+
+    </main>
+
+    <script src="js/ai-assistant.js"></script>
+</body>
+</html>
