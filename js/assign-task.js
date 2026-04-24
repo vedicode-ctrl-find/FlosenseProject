@@ -195,15 +195,17 @@ function handleAssigneeSelect(e) {
     textEl.innerHTML = feedbackText;
 }
 
-// ── Smart Suggestions Panel ──
-async function generateSmartSuggestions() {
-    console.log('DEBUG: generateSmartSuggestions called');
+// ── Smart Match AI Engine (Client-Side) ──
+// Computes a weighted Match Score (0–100) for every team member:
+//   • Skill Alignment  = 40 pts  (does the employee have the required skill?)
+//   • Capacity          = 40 pts  (current workload + projected impact)
+//   • Efficiency        = 20 pts  (historical performance metric)
+
+function generateSmartSuggestions() {
     const requiredSkill = document.getElementById('task-skill').value;
     const hours         = parseInt(document.getElementById('task-hours').value) || 0;
     const projectId     = document.getElementById('task-project').value;
     const panel         = document.getElementById('smart-suggestions-list');
-
-    console.log('DEBUG: Values:', { requiredSkill, hours, projectId });
 
     if (!projectId) {
         panel.innerHTML = '<p class="empty-state">Select a project first to see team member recommendations.</p>';
@@ -216,62 +218,104 @@ async function generateSmartSuggestions() {
         return;
     }
 
-    panel.innerHTML = '<div class="loading-mini">AI is analyzing team bandwidth...</div>';
+    if (employeesData.length === 0) {
+        panel.innerHTML = '<p class="empty-state">No team members found in this project.</p>';
+        return;
+    }
 
-    try {
-        const res = await fetch('/api/recommend/recommend', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_id: projectId,
-                required_skills: [requiredSkill],
-                estimated_hours: hours
-            })
-        });
-        const data = await res.json();
+    // ── Compute Match Scores ──
+    const candidates = employeesData.map(emp => {
+        let score = 0;
+        const analysisTags = [];
 
-        if (!data.success || !data.data || data.data.length === 0) {
-            panel.innerHTML = '<p class="empty-state">No suitable recommendations found for this task.</p>';
-            return;
+        // 1. Skill Match (40 pts)
+        const hasSkill = emp.skills && emp.skills.some(s =>
+            s.toLowerCase() === requiredSkill.toLowerCase()
+        );
+        if (hasSkill) {
+            score += 40;
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-check-circle text-green"></i> Skill: ${requiredSkill}</span>`);
+        } else {
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-times-circle text-red"></i> Missing: ${requiredSkill}</span>`);
         }
 
-        const candidates = data.data;
-        bestAlternative = candidates[0]; // For the overload modal logic
-        panel.innerHTML = '';
+        // 2. Capacity (40 pts) — lower projected workload = higher score
+        const currentWL = emp.workload_percentage || 0;
+        const projectedWL = currentWL + ((hours / 40) * 100);
 
-        candidates.forEach((emp, index) => {
-            const isBest = index === 0;
-            const cls    = isBest ? 'suggestion-card high-match' : 'suggestion-card';
+        if (projectedWL <= 80) {
+            score += 40;
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-bolt text-blue"></i> High Availability</span>`);
+        } else if (projectedWL <= 100) {
+            score += 25;
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-balance-scale text-yellow"></i> Balanced (${Math.round(projectedWL)}%)</span>`);
+        } else if (projectedWL <= 120) {
+            score += 10;
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-exclamation-triangle text-yellow"></i> Near Capacity (${Math.round(projectedWL)}%)</span>`);
+        } else {
+            score += 0;
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-fire text-red"></i> Overloaded (${Math.round(projectedWL)}%)</span>`);
+        }
 
-            panel.innerHTML += `
-                <div class="${cls}">
-                    <div class="sc-header">
-                        <div class="sc-profile">
-                            <span class="sc-name">${emp.name}</span>
-                            <span class="sc-role">${emp.role}</span>
-                        </div>
-                        <div class="match-score-ring" style="--score: ${emp.matchScore}%">
-                            <span class="score-val">${emp.matchScore}</span>
-                            <span class="score-label">MATCH</span>
+        // 3. Efficiency (20 pts) — normalized from 0–200 → 0–20
+        const efficiency = emp.efficiency || 100;
+        const effScore = Math.min(20, Math.round(efficiency / 5));
+        score += effScore;
+        if (efficiency >= 120) {
+            analysisTags.push(`<span class="analysis-tag"><i class="fas fa-star text-purple"></i> High Performer</span>`);
+        }
+
+        return {
+            ...emp,
+            id: emp._id,
+            matchScore: Math.min(100, Math.round(score)),
+            projectedWL: Math.round(projectedWL),
+            analysis: analysisTags.join('')
+        };
+    });
+
+    // Sort by match score descending — top 3
+    candidates.sort((a, b) => b.matchScore - a.matchScore);
+    const top3 = candidates.slice(0, 3);
+    bestAlternative = top3[0] || null;
+
+    // ── Render Cards ──
+    panel.innerHTML = top3.map((emp, index) => {
+        const isBest = index === 0;
+        const cls = isBest ? 'suggestion-card high-match' : 'suggestion-card';
+        const avatarBg = isBest ? '7c3aed' : '8b5cf6';
+
+        return `
+            <div class="${cls}">
+                ${isBest ? '<div class="best-match-ribbon">✦ RECOMMENDED</div>' : ''}
+                <div class="sc-header">
+                    <div class="sc-profile">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=${avatarBg}&color=fff"
+                                 style="width:36px; height:36px; border-radius:10px;">
+                            <div>
+                                <span class="sc-name">${emp.name}</span>
+                                <span class="sc-role">${emp.role}</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="sc-analysis">
-                        <i class="fas fa-robot" style="margin-right:6px; color:var(--primary-600);"></i> 
-                        ${emp.analysis}
-                    </div>
-                    <div class="sc-actions">
-                        <button type="button" class="btn-assign-smart" onclick="selectSuggestedEmployee('${emp.id}')">
-                            ${isBest ? '✦ Best Match: Assign Now' : 'Assign Employee'}
-                        </button>
-                        ${isBest ? '<button type="button" class="btn-ignore" onclick="ignoreSuggestion(this)">Skip</button>' : ''}
+                    <div class="match-score-ring" style="--score: ${emp.matchScore}%">
+                        <span class="score-val">${emp.matchScore}</span>
+                        <span class="score-label">MATCH</span>
                     </div>
                 </div>
-            `;
-        });
-    } catch (err) {
-        console.error('Failed to fetch recommendations:', err);
-        panel.innerHTML = '<p class="empty-state">Error generating recommendations. Please try again.</p>';
-    }
+                <div class="sc-analysis">
+                    ${emp.analysis}
+                </div>
+                <div class="sc-actions">
+                    <button type="button" class="btn-assign-smart" onclick="selectSuggestedEmployee('${emp.id}')">
+                        ${isBest ? '✦ Assign Best Match' : 'Select Candidate'}
+                    </button>
+                    ${isBest ? '<button type="button" class="btn-ignore" onclick="ignoreSuggestion(this)">Skip</button>' : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 window.selectSuggestedEmployee = function(empId) {

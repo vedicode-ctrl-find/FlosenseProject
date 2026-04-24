@@ -454,3 +454,63 @@ textarea.styled-input {
 
 /* ── toast info variant ── */
 .toast.info { border-left: 4px solid #3b82f6; }
+
+/* ── Best Match Ribbon ── */
+.best-match-ribbon {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+    color: white;
+    font-size: 9px;
+    font-weight: 900;
+    padding: 4px 14px;
+    border-radius: 0 12px 0 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+/* ── Enhanced Analysis Tags ── */
+.analysis-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    letter-spacing: 0.3px;
+}
+
+.analysis-tag .text-green { color: #10b981; }
+.analysis-tag .text-red { color: #ef4444; }
+.analysis-tag .text-blue { color: #3b82f6; }
+.analysis-tag .text-yellow { color: #f59e0b; }
+.analysis-tag .text-purple { color: #8b5cf6; }
+
+.analysis-tag:has(.text-green) { background: #ecfdf5; color: #065f46; }
+.analysis-tag:has(.text-red) { background: #fef2f2; color: #991b1b; }
+.analysis-tag:has(.text-blue) { background: #eff6ff; color: #1e40af; }
+.analysis-tag:has(.text-yellow) { background: #fffbeb; color: #92400e; }
+.analysis-tag:has(.text-purple) { background: #f5f3ff; color: #5b21b6; }
+
+/* ── Loading State ── */
+.loading-mini {
+    text-align: center;
+    padding: 40px 20px;
+    font-size: 13px;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+/* ── Suggestion Card Avatar Enhancement ── */
+.suggestion-card img {
+    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.15);
+    border: 2px solid white;
+}
+
+.suggestion-card.high-match {
+    border-left: 4px solid #7c3aed;
+    background: linear-gradient(135deg, #faf5ff, #ffffff);
+    box-shadow: 0 4px 12px -2px rgba(124, 58, 237, 0.1);
+}

@@ -529,7 +529,7 @@ async function renderAssignTaskModalContent(showForm = false) {
             </style>
         `;
     } else {
-        // FORM VIEW
+        // FORM VIEW — with Smart Match AI Integration
         container.innerHTML = `
             <div class="modal-header">
                 <div class="modal-header-info">
@@ -541,7 +541,8 @@ async function renderAssignTaskModalContent(showForm = false) {
                 </div>
                 <button class="close-modal" onclick="closeModal()">✕</button>
             </div>
-            <div class="modal-body" style="padding: 30px;">
+            <div class="modal-body" style="padding: 30px; overflow-y:auto; max-height:65vh;">
+
                 <form id="modal-assign-task-form" onsubmit="submitModalTaskAssignment(event)">
                     <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
                         <div class="form-group" style="grid-column: span 2;">
@@ -552,6 +553,27 @@ async function renderAssignTaskModalContent(showForm = false) {
                         <div class="form-group" style="grid-column: span 2;">
                             <label class="modern-label">Description</label>
                             <textarea id="m-task-desc" class="modern-textarea" style="min-height: 80px;" placeholder="Provide technical context and goals..."></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="modern-label">Required Skill <span style="font-size:10px; color:var(--primary-violet); font-weight:800;">★ AI</span></label>
+                            <select id="m-task-skill" class="modern-input styled-select" style="height:48px;">
+                                <option value="">-- Select Skill --</option>
+                                <option value="Frontend">Frontend</option>
+                                <option value="Backend">Backend</option>
+                                <option value="Testing">Testing</option>
+                                <option value="Database">Database</option>
+                                <option value="DevOps">DevOps</option>
+                                <option value="UI/UX">UI/UX</option>
+                                <option value="Python">Python</option>
+                                <option value="Node.js">Node.js</option>
+                                <option value="React">React</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="modern-label">Effort Estimation (Hours)</label>
+                            <input type="number" id="m-task-hours" class="modern-input" min="1" max="100" value="8" required>
                         </div>
 
                         <div class="form-group">
@@ -574,11 +596,6 @@ async function renderAssignTaskModalContent(showForm = false) {
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label class="modern-label">Effort Estimation (Hours)</label>
-                            <input type="number" id="m-task-hours" class="modern-input" min="1" max="100" value="8" required>
-                        </div>
-
                     <div class="form-group">
                         <label class="modern-label">Priority Level</label>
                         <select id="m-task-priority" class="modern-input styled-select" style="height: 48px;">
@@ -588,6 +605,9 @@ async function renderAssignTaskModalContent(showForm = false) {
                         </select>
                     </div>
                 </div>
+
+                <!-- Smart Match Feedback for selected assignee -->
+                <div id="smart-match-feedback" style="margin-top:16px; display:none;"></div>
             </form>
         </div>
         <div class="modal-footer" style="padding: 24px 30px;">
@@ -598,6 +618,13 @@ async function renderAssignTaskModalContent(showForm = false) {
                 </button>
             </div>
         </div>
+
+        <style>
+            .match-feedback { display:flex; gap:10px; align-items:center; padding:12px 16px; border-radius:10px; font-size:12px; font-weight:600; }
+            .match-feedback.good { background:#ecfdf5; color:#065f46; border:1px solid #bbf7d0; }
+            .match-feedback.warn { background:#fffbeb; color:#92400e; border:1px solid #fde68a; }
+            .match-feedback.bad { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+        </style>
     `;
 
     // Initialize custom components
@@ -611,11 +638,20 @@ async function renderAssignTaskModalContent(showForm = false) {
 
     initializeCustomSelect('m-assignee-wrapper', selectOptions, (val) => {
         selectedAssigneeId = val;
+        updateSmartMatchFeedback(val, members);
     });
 
     initializeCustomDatePicker('m-deadline-wrapper', (date) => {
         selectedDeadline = date;
     });
+
+    // Smart Match: Listen for skill/hours changes to generate recommendations
+    const skillSelect = document.getElementById('m-task-skill');
+    const hoursInput = document.getElementById('m-task-hours');
+
+    const runSmartMatch = () => computeSmartMatchCards(members);
+    skillSelect.addEventListener('change', runSmartMatch);
+    hoursInput.addEventListener('input', runSmartMatch);
 
     document.getElementById('modal-deploy-task-btn').onclick = async () => {
         const submitBtn = document.getElementById('modal-deploy-task-btn');
@@ -623,6 +659,7 @@ async function renderAssignTaskModalContent(showForm = false) {
         const description = document.getElementById('m-task-desc').value.trim();
         const hours = parseInt(document.getElementById('m-task-hours').value);
         const priority = document.getElementById('m-task-priority').value;
+        const skill = document.getElementById('m-task-skill').value;
         const requested_by = localStorage.getItem('userId');
         const company_id = localStorage.getItem('companyId');
 
@@ -651,7 +688,7 @@ async function renderAssignTaskModalContent(showForm = false) {
                         project_id: currentCreatingProject._id || currentCreatingProject.id,
                         company_id, requested_by,
                         deadline: selectedDeadline,
-                        required_skills: [] 
+                        required_skills: skill ? [skill] : []
                     })
                 });
                 const data = await res.json();
@@ -689,6 +726,259 @@ async function renderAssignTaskModalContent(showForm = false) {
             }
         };
     }
+}
+
+// ── Smart Match AI Engine (Premium Popup) ──
+// Computes Match Score (0–100) per candidate:
+//   Skill Alignment = 40 pts | Capacity = 40 pts | Efficiency = 20 pts
+
+function computeSmartMatchCards(members) {
+    const skill = document.getElementById('m-task-skill').value;
+    const hours = parseInt(document.getElementById('m-task-hours').value) || 0;
+
+    if (!skill || hours <= 0 || members.length === 0) return;
+
+    const scored = members.map(emp => {
+        let score = 0;
+        const tags = [];
+
+        // Skill (40)
+        const hasSkill = emp.skills && emp.skills.some(s => s.toLowerCase() === skill.toLowerCase());
+        if (hasSkill) {
+            score += 40;
+            tags.push({ text: `✓ ${skill}`, cls: 'green' });
+        } else {
+            tags.push({ text: `✗ No ${skill}`, cls: 'red' });
+        }
+
+        // Capacity (40)
+        const wl = emp.workload_percentage || 0;
+        const projected = wl + ((hours / 40) * 100);
+        if (projected <= 80) {
+            score += 40;
+            tags.push({ text: '⚡ High Availability', cls: 'blue' });
+        } else if (projected <= 100) {
+            score += 25;
+            tags.push({ text: `⚖ Balanced ${Math.round(projected)}%`, cls: 'yellow' });
+        } else {
+            score += Math.max(0, 10 - (projected - 100) / 5);
+            tags.push({ text: `🔥 Overloaded ${Math.round(projected)}%`, cls: 'red' });
+        }
+
+        // Efficiency (20)
+        const eff = emp.efficiency || 100;
+        score += Math.min(20, Math.round(eff / 5));
+        if (eff >= 120) tags.push({ text: '★ Top Performer', cls: 'purple' });
+
+        return { ...emp, matchScore: Math.min(100, Math.round(score)), tags, projected: Math.round(projected) };
+    });
+
+    scored.sort((a, b) => b.matchScore - a.matchScore);
+    const top3 = scored.slice(0, 3);
+
+    showSmartMatchPopup(top3, skill, hours);
+}
+
+function showSmartMatchPopup(candidates, skill, hours) {
+    // Remove existing popup if any
+    const existing = document.getElementById('smart-match-popup-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'smart-match-popup-overlay';
+    overlay.innerHTML = `
+        <div class="smp-backdrop" onclick="closeSmartMatchPopup()"></div>
+        <div class="smp-container">
+            <div class="smp-header">
+                <div class="smp-header-left">
+                    <div class="smp-icon-wrap">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <div>
+                        <h2>AI Smart Match</h2>
+                        <p>Analyzing <strong>${skill}</strong> specialists with <strong>${hours}h</strong> capacity</p>
+                    </div>
+                </div>
+                <button class="smp-close" onclick="closeSmartMatchPopup()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="smp-body">
+                <div class="smp-subtitle">
+                    <span>Top 3 Recommended Candidates</span>
+                    <span class="smp-badge">BIAS-FREE ENGINE</span>
+                </div>
+
+                <div class="smp-grid">
+                    ${candidates.map((emp, i) => {
+                        const isBest = i === 0;
+                        const scoreColor = emp.matchScore >= 70 ? '#10b981' : (emp.matchScore >= 40 ? '#f59e0b' : '#ef4444');
+                        const avatarBg = isBest ? '7c3aed' : (i === 1 ? '6366f1' : '8b5cf6');
+
+                        return `
+                        <div class="smp-card ${isBest ? 'smp-best' : ''}" onclick="smartSelectAssignee('${emp._id || emp.id}', '${emp.name.replace(/'/g, "\\'")}')">
+                            ${isBest ? '<div class="smp-ribbon">✦ RECOMMENDED</div>' : ''}
+                            <div class="smp-card-top">
+                                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=${avatarBg}&color=fff&size=80" class="smp-avatar">
+                                <div class="smp-score-ring" style="--score-color:${scoreColor}; --score-pct:${emp.matchScore}%">
+                                    <svg viewBox="0 0 36 36">
+                                        <path class="smp-ring-bg" d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                        <path class="smp-ring-fill" stroke="${scoreColor}" stroke-dasharray="${emp.matchScore}, 100" d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                    </svg>
+                                    <div class="smp-score-text">${emp.matchScore}<small>%</small></div>
+                                </div>
+                            </div>
+                            <div class="smp-card-info">
+                                <h4>${emp.name}</h4>
+                                <span class="smp-role">${emp.role}</span>
+                            </div>
+                            <div class="smp-tags">
+                                ${emp.tags.map(t => `<span class="smp-tag ${t.cls}">${t.text}</span>`).join('')}
+                            </div>
+                            <div class="smp-card-meta">
+                                <span><i class="fas fa-briefcase"></i> ${emp.workload_percentage || 0}% current</span>
+                                <span><i class="fas fa-arrow-right"></i> ${emp.projected}% after</span>
+                            </div>
+                            <button class="smp-select-btn">${isBest ? '✦ Assign Best Match' : 'Select Candidate'}</button>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>
+
+            <div class="smp-footer">
+                <button class="smp-skip" onclick="closeSmartMatchPopup()">
+                    <i class="fas fa-forward"></i> Skip — I'll choose manually
+                </button>
+            </div>
+        </div>
+
+        <style>
+            #smart-match-popup-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:2000; display:flex; align-items:center; justify-content:center; animation:smpFadeIn 0.3s ease; }
+            @keyframes smpFadeIn { from { opacity:0; } to { opacity:1; } }
+            .smp-backdrop { position:absolute; inset:0; background:rgba(15,23,42,0.6); backdrop-filter:blur(8px); }
+            .smp-container { position:relative; background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-radius:24px; width:90%; max-width:720px; box-shadow:0 40px 80px -20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.8); overflow:hidden; animation:smpSlideUp 0.4s cubic-bezier(0.16,1,0.3,1); }
+            @keyframes smpSlideUp { from { transform:translateY(40px) scale(0.96); opacity:0; } to { transform:translateY(0) scale(1); opacity:1; } }
+
+            .smp-header { display:flex; align-items:center; justify-content:space-between; padding:28px 32px 20px; background:linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border-bottom:1px solid rgba(139,92,246,0.1); }
+            .smp-header-left { display:flex; align-items:center; gap:16px; }
+            .smp-icon-wrap { width:48px; height:48px; background:var(--violet-gradient); border-radius:14px; display:flex; align-items:center; justify-content:center; color:white; font-size:20px; box-shadow:0 8px 20px -4px rgba(124,58,237,0.4); }
+            .smp-header h2 { margin:0; font-size:20px; font-weight:800; color:var(--gray-900); letter-spacing:-0.5px; }
+            .smp-header p { margin:4px 0 0; font-size:13px; color:var(--gray-500); font-weight:500; }
+            .smp-close { width:36px; height:36px; border-radius:10px; border:none; background:white; color:var(--gray-400); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:var(--shadow-sm); }
+            .smp-close:hover { color:var(--gray-900); transform:scale(1.1); }
+
+            .smp-body { padding:24px 32px; }
+            .smp-subtitle { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+            .smp-subtitle span:first-child { font-size:13px; font-weight:700; color:var(--gray-600); text-transform:uppercase; letter-spacing:0.5px; }
+            .smp-badge { font-size:9px; font-weight:900; background:linear-gradient(135deg, #ede9fe, #ddd6fe); color:#7c3aed; padding:4px 12px; border-radius:100px; letter-spacing:1px; }
+
+            .smp-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+            .smp-card { background:white; border:1px solid var(--gray-100); border-radius:16px; padding:20px 16px; text-align:center; cursor:pointer; transition:all 0.3s cubic-bezier(0.4,0,0.2,1); position:relative; overflow:hidden; }
+            .smp-card:hover { border-color:var(--primary-violet); transform:translateY(-4px); box-shadow:0 16px 32px -8px rgba(124,58,237,0.2); }
+            .smp-best { border:2px solid rgba(124,58,237,0.3); background:linear-gradient(180deg, #faf5ff 0%, #fff 100%); }
+            .smp-ribbon { position:absolute; top:0; left:0; right:0; background:var(--violet-gradient); color:white; font-size:9px; font-weight:900; padding:5px 0; letter-spacing:1.5px; text-align:center; }
+
+            .smp-card-top { display:flex; justify-content:center; align-items:center; gap:16px; margin-top:8px; margin-bottom:12px; }
+            .smp-best .smp-card-top { margin-top:28px; }
+            .smp-avatar { width:52px; height:52px; border-radius:16px; border:3px solid white; box-shadow:0 4px 12px -2px rgba(0,0,0,0.15); }
+
+            .smp-score-ring { width:56px; height:56px; position:relative; }
+            .smp-score-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+            .smp-ring-bg { fill:none; stroke:#f1f5f9; stroke-width:3; }
+            .smp-ring-fill { fill:none; stroke-width:3; stroke-linecap:round; transition:stroke-dasharray 1s ease; }
+            .smp-score-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:900; color:var(--gray-900); }
+            .smp-score-text small { font-size:9px; color:var(--gray-400); }
+
+            .smp-card-info h4 { margin:0 0 2px; font-size:15px; font-weight:800; color:var(--gray-900); }
+            .smp-role { font-size:10px; font-weight:700; color:var(--gray-400); text-transform:uppercase; letter-spacing:0.5px; }
+
+            .smp-tags { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; margin:12px 0; }
+            .smp-tag { font-size:10px; font-weight:700; padding:4px 8px; border-radius:6px; }
+            .smp-tag.green { background:#ecfdf5; color:#065f46; }
+            .smp-tag.red { background:#fef2f2; color:#991b1b; }
+            .smp-tag.blue { background:#eff6ff; color:#1e40af; }
+            .smp-tag.yellow { background:#fffbeb; color:#92400e; }
+            .smp-tag.purple { background:#f5f3ff; color:#5b21b6; }
+
+            .smp-card-meta { display:flex; justify-content:center; gap:12px; font-size:10px; font-weight:600; color:var(--gray-400); margin-bottom:12px; }
+            .smp-card-meta i { margin-right:3px; }
+
+            .smp-select-btn { width:100%; padding:10px; border:none; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; background:var(--gray-50); color:var(--gray-600); }
+            .smp-card:hover .smp-select-btn { background:var(--violet-gradient); color:white; box-shadow:0 4px 12px -2px rgba(124,58,237,0.3); }
+            .smp-best .smp-select-btn { background:var(--violet-gradient); color:white; }
+
+            .smp-footer { padding:16px 32px; background:var(--gray-50); border-top:1px solid var(--gray-100); display:flex; justify-content:center; }
+            .smp-skip { background:none; border:none; font-size:13px; font-weight:600; color:var(--gray-400); cursor:pointer; padding:8px 16px; border-radius:8px; transition:all 0.2s; display:flex; align-items:center; gap:8px; }
+            .smp-skip:hover { color:var(--gray-600); background:white; }
+        </style>
+    `;
+
+    document.body.appendChild(overlay);
+}
+
+window.closeSmartMatchPopup = function() {
+    const popup = document.getElementById('smart-match-popup-overlay');
+    if (popup) {
+        popup.style.animation = 'smpFadeIn 0.2s ease reverse';
+        setTimeout(() => popup.remove(), 200);
+    }
+};
+
+window.smartSelectAssignee = function(empId, empName) {
+    // Find and click the matching option in the custom select
+    const options = document.querySelectorAll('#m-assignee-wrapper .custom-option');
+    options.forEach(opt => {
+        if (opt.dataset.value === empId) {
+            opt.click();
+        }
+    });
+    closeSmartMatchPopup();
+    showToast(`✦ Smart Match: ${empName} selected.`, 'success');
+};
+
+function updateSmartMatchFeedback(empId, members) {
+    const feedbackEl = document.getElementById('smart-match-feedback');
+    if (!feedbackEl) return;
+
+    const skill = document.getElementById('m-task-skill')?.value || '';
+    const hours = parseInt(document.getElementById('m-task-hours')?.value) || 8;
+    const emp = members.find(m => String(m._id || m.id) === String(empId));
+
+    if (!emp) { feedbackEl.style.display = 'none'; return; }
+
+    const wl = emp.workload_percentage || 0;
+    const projected = wl + ((hours / 40) * 100);
+    const hasSkill = skill && emp.skills && emp.skills.some(s => s.toLowerCase() === skill.toLowerCase());
+
+    // Compute match score
+    let score = 0;
+    score += hasSkill ? 40 : 0;
+    score += projected <= 80 ? 40 : (projected <= 100 ? 25 : Math.max(0, 10));
+    score += Math.min(20, Math.round((emp.efficiency || 100) / 5));
+    score = Math.min(100, Math.round(score));
+
+    const scoreColor = score >= 70 ? '#10b981' : (score >= 40 ? '#f59e0b' : '#ef4444');
+    let cls = 'good', icon = 'fa-check-circle';
+    let msg = `<strong>Match Score: ${score}%</strong> — ${emp.name} has sufficient bandwidth (${Math.round(projected)}% projected).`;
+
+    if (projected > 120) {
+        cls = 'bad'; icon = 'fa-exclamation-triangle';
+        msg = `<strong>Match Score: ${score}%</strong> — ⚠ ${emp.name} will be overloaded at ${Math.round(projected)}%.`;
+    } else if (projected > 100 || (!hasSkill && skill)) {
+        cls = 'warn'; icon = 'fa-info-circle';
+        msg = `<strong>Match Score: ${score}%</strong> — ${emp.name} at ${Math.round(projected)}% load.`;
+        if (!hasSkill && skill) msg += ` Missing skill: ${skill}.`;
+    }
+
+    feedbackEl.style.display = 'block';
+    feedbackEl.innerHTML = `
+        <div class="match-feedback ${cls}">
+            <i class="fas ${icon}"></i>
+            <div>${msg}</div>
+            <div style="margin-left:auto; width:32px; height:32px; border-radius:50%; background:${scoreColor}15; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; color:${scoreColor};">${score}</div>
+        </div>
+    `;
 }
 
 async function openTeamSetupModal(projectId) {
@@ -1230,7 +1520,7 @@ async function renderLeadOverview(container) {
     // Show premium skeleton while loading
     container.innerHTML = `
         <div class="welcome-header">
-            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Organization Health</h2>
+            <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">Organization Health</h2>
             <p style="color: var(--gray-600); font-weight: 500;">Intelligence platform analyzing team capacity and delivery risk.</p>
         </div>
         <div class="stats-grid">
@@ -1255,7 +1545,7 @@ async function renderLeadOverview(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Organization Health</h2>
+            <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">Organization Health</h2>
             <p style="color: var(--gray-600); font-weight: 500;">Intelligence platform analyzing team capacity and delivery risk.</p>
         </div>
 
@@ -1489,7 +1779,7 @@ async function renderTeamView(container) {
     container.innerHTML = `
         <div class="welcome-header" style="display:flex; justify-content:space-between; align-items:center;">
             <div>
-                <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Team Hub</h2>
+                <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">Team Hub</h2>
                 <p style="color: var(--gray-600); font-weight: 500;">Managing <strong>${filtered.length}</strong> registered members in the ecosystem.</p>
             </div>
             <div style="background:var(--surface-glass); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.4); padding:8px 18px; border-radius:100px; font-size:13px; color:var(--primary-violet); font-weight:800; box-shadow:var(--shadow-sm); display:flex; align-items:center; gap:10px;">
@@ -1570,7 +1860,7 @@ function renderTeamCard(e) {
                 <div style="position:absolute; bottom:-2px; right:-2px; width:14px; height:14px; border-radius:50%; background:${statusColor}; border:2px solid white;"></div>
             </div>
             <div style="flex:1;">
-                <h4 style="font-size:16px; font-weight:800; color:var(--gray-900); letter-spacing:-0.5px; margin:0;">${e.name}</h4>
+                <h4 style="font-size:15px; font-weight:700; color:var(--gray-900); letter-spacing:-0.3px; margin:0;">${e.name}</h4>
                 <p style="font-size:11px; color:var(--gray-500); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin:2px 0 0;">${e.role}</p>
             </div>
         </div>
@@ -1833,11 +2123,11 @@ function openProjectDetails(projectId) {
             .tag-on-hold { background: #fef3c7; color: #92400e; }
             
             .project-title-text {
-                font-size: 36px;
-                font-weight: 800;
+                font-size: 22px;
+                font-weight: 700;
                 color: var(--gray-900);
                 margin-bottom: 12px;
-                letter-spacing: -0.5px;
+                letter-spacing: -0.3px;
             }
             .project-desc-text {
                 font-size: 16px;
@@ -1985,7 +2275,7 @@ function renderEmployeeOverview(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Hello, ${name}</h2>
+            <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">Hello, ${name}</h2>
             <p style="color: var(--gray-600); font-weight: 500;">Welcome back. You have <strong>${myTasks.length}</strong> active tasks across <strong>${myProjects.length}</strong> project streams.</p>
         </div>
 
@@ -2076,7 +2366,7 @@ function renderEmployeeProjectsView(container) {
     if (myProjects.length === 0) {
         container.innerHTML = `
         <div class="welcome-header">
-            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">My Projects</h2>
+            <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">My Projects</h2>
             <p style="color: var(--primary-violet); font-weight: 500;">You haven't been assigned to any projects yet. Contact your Company Lead to get started.</p>
         </div>`;
         return;
@@ -2084,7 +2374,7 @@ function renderEmployeeProjectsView(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">My Projects</h2>
+            <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">My Projects</h2>
             <p style="color: var(--gray-600); font-weight: 500;">You are participating in <strong>${myProjects.length}</strong> active initiatives.</p>
         </div>
         
@@ -2103,7 +2393,7 @@ function renderEmployeeProjectsView(container) {
                             <span style="font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; background:${statusColor}15; color:${statusColor}; padding:4px 12px; border-radius:100px; border:1px solid ${statusColor}30;">${p.status}</span>
                             ${isLead ? '<span style="font-size:10px; font-weight:800; color:#f59e0b; background:#fef3c7; padding:4px 10px; border-radius:100px;"><i class="fas fa-crown"></i> LEAD</span>' : ''}
                         </div>
-                        <h3 style="font-size:19px; font-weight:800; color:var(--gray-900); margin-bottom:8px; letter-spacing:-0.5px;">${p.name}</h3>
+                        <h3 style="font-size:17px; font-weight:700; color:var(--gray-900); margin-bottom:8px; letter-spacing:-0.3px;">${p.name}</h3>
                         <p style="font-size:13px; color:var(--gray-500); line-height:1.5; margin-bottom:24px;">${p.description || 'Secure project data stream.'}</p>
                         
                         <div style="margin-bottom:20px;">
@@ -2172,7 +2462,7 @@ function renderEmployeeTasksView(container) {
     container.innerHTML = `
         <div class="welcome-header" style="display:flex; justify-content: space-between; align-items: center;">
             <div>
-                <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Strategic Kanban</h2>
+                <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">Strategic Kanban</h2>
                 <p style="color: var(--gray-600); font-weight: 500;">Orchestrating ${activeTasks.length} objectives across your active streams.</p>
             </div>
         </div>
@@ -2183,7 +2473,7 @@ function renderEmployeeTasksView(container) {
                 return `
                     <div class="kanban-column" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); border-radius: 20px; min-height: 70vh; display:flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.4); box-shadow: var(--shadow-sm);">
                         <div class="kanban-header" style="padding: 20px; display:flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.05);">
-                            <h3 style="font-size: 13px; font-weight: 800; color: var(--gray-800); text-transform: uppercase; letter-spacing: 1px; display:flex; align-items: center; gap: 10px;">
+                            <h3 style="font-size: 12px; font-weight: 700; color: var(--gray-600); text-transform: uppercase; letter-spacing: 1px; display:flex; align-items: center; gap: 10px;">
                                 <i class="fas ${col.icon}" style="color:${col.color};"></i>
                                 ${col.label}
                             </h3>
@@ -2208,7 +2498,7 @@ function renderEmployeeTasksView(container) {
                                             </div>
                                         </div>
                                     </div>
-                                    <h4 style="font-size: 15px; font-weight: 800; color: var(--gray-900); margin-bottom: 6px; line-height: 1.3;">${t.name}</h4>
+                                    <h4 style="font-size: 14px; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; line-height: 1.3;">${t.name}</h4>
                                     <p style="font-size: 12px; color: var(--gray-500); line-height: 1.5; margin-bottom: 20px;">${t.description ? (t.description.length > 70 ? t.description.substring(0, 67) + '...' : t.description) : 'No operational details.'}</p>
                                     
                                     <div style="display:flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid var(--gray-50);">
@@ -2536,7 +2826,7 @@ function renderEmployeePerformanceView(container) {
 
     container.innerHTML = `
         <div class="welcome-header">
-            <h2 style="font-size: 32px; font-weight: 800; letter-spacing: -1px; background: var(--violet-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Capacity Intelligence</h2>
+            <h2 style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900);">Capacity Intelligence</h2>
             <p style="color: var(--gray-600); font-weight: 500;">Real-time analysis of your professional bandwidth and delivery efficiency.</p>
         </div>
         
@@ -2584,7 +2874,7 @@ function renderEmployeePerformanceView(container) {
                         <div style="font-size:12px; font-weight:800; color:${status.color}; text-transform:uppercase; letter-spacing:1px; margin-top:4px;">${status.text}</div>
                     </div>
                 </div>
-                <h3 style="font-size:22px; font-weight:800; color:var(--gray-900); margin-bottom:12px;">Operational Status</h3>
+                <h3 style="font-size:17px; font-weight:700; color:var(--gray-900); margin-bottom:12px;">Operational Status</h3>
                 <p style="color:var(--gray-600); max-width:400px; line-height:1.6; font-size:15px;">${status.desc}</p>
                 <div style="margin-top:24px; padding:12px 24px; border-radius:100px; background:${status.bg}; color:${status.color}; font-weight:700; font-size:13px; border:1px solid ${status.color}20;">
                     <i class="fas fa-shield-alt" style="margin-right:8px;"></i> FlowSense Verified Bandwidth
