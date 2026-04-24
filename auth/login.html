@@ -137,7 +137,10 @@
             </div>
 
             <div class="form-group">
-                <label for="password">Password</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <label for="password" style="margin-bottom: 0;">Password</label>
+                    <a href="#" onclick="handleForgotPassword(event)" style="font-size: 13px; color: var(--primary, #3b82f6); text-decoration: none; font-weight: 500; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">Forgot Password?</a>
+                </div>
                 <div class="input-wrapper">
                     <input type="password" id="password" placeholder="••••••••" required>
                 </div>
@@ -198,6 +201,28 @@
 
         // Initialize
         setRole('company');
+
+        // ── Forgot Password ──
+        async function handleForgotPassword(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            if (!email) {
+                showToast('Please enter your email address above to reset password.', 'info');
+                document.getElementById('email').focus();
+                return;
+            }
+            
+            try {
+                await auth.sendPasswordResetEmail(email);
+                showToast('Password reset link sent! Please check your inbox.', 'success');
+            } catch (error) {
+                console.error('Password Reset Error:', error);
+                let msg = 'Failed to send reset email. Please try again.';
+                if (error.code === 'auth/user-not-found') msg = 'No account found with this email.';
+                if (error.code === 'auth/invalid-email') msg = 'Invalid email format.';
+                showToast(msg, 'error');
+            }
+        }
 
         // ── Login Form Submit ──
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -314,6 +339,18 @@
                 loginBtn.innerText = originalBtnText;
                 loginBtn.disabled = false;
                 loginBtn.classList.remove('btn-loading');
+            }
+        });
+
+        // ── Handle Back Button (BFCache) ──
+        window.addEventListener('pageshow', (e) => {
+            if (e.persisted) {
+                const loginBtn = document.getElementById('login-btn');
+                if (loginBtn) {
+                    loginBtn.innerText = 'Sign In to Dashboard';
+                    loginBtn.disabled = false;
+                    loginBtn.classList.remove('btn-loading');
+                }
             }
         });
     </script>
