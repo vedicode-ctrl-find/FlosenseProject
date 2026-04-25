@@ -3009,3 +3009,19 @@ async function runDataMigration() {
         }, 5000);
     }
 }
+
+// ── Responsive Sidebar Toggle ──
+function toggleSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    
+    if (sidebar) sidebar.classList.toggle('open');
+    if (overlay) overlay.classList.toggle('show');
+    
+    // Lock scroll when menu is open
+    if (sidebar && sidebar.classList.contains('open')) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = '';
+    }
+}

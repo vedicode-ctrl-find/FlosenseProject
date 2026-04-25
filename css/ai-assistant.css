@@ -377,3 +377,65 @@ body {
     border-radius: 4px 14px 14px 14px;
     font-size: 14px;
 }
+
+/* ── RESPONSIVE AI ASSISTANT ── */
+@media (max-width: 1024px) {
+    :root {
+        --sidebar-w: 100px;
+    }
+}
+
+@media (max-width: 768px) {
+    :root {
+        --sidebar-w: 0px;
+    }
+    
+    .ai-main {
+        margin-left: 0;
+    }
+    
+    .ai-header {
+        padding: 15px 20px;
+    }
+    
+    .ai-header-inner {
+        flex-direction: row;
+        align-items: center;
+    }
+    
+    .ai-status {
+        display: none; /* Hide status on mobile header to save space */
+    }
+    
+    .ai-title-block h1 {
+        font-size: 16px;
+    }
+    
+    .ai-title-block p {
+        display: none;
+    }
+    
+    .hamburger {
+        display: flex !important;
+    }
+    
+    .quick-queries {
+        padding: 10px 20px;
+    }
+    
+    .chat-window {
+        padding: 20px;
+    }
+    
+    .chat-msg {
+        max-width: 90%;
+    }
+    
+    .ai-input-bar {
+        padding: 12px 16px;
+    }
+    
+    .candidates-grid {
+        grid-template-columns: 1fr;
+    }
+}

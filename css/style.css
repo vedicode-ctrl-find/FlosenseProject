@@ -206,7 +206,47 @@ body {
     to { opacity: 1; transform: scale(1); }
 }
 
-/* Micro-animations */
+/* Global Micro-interactions */
 .premium-hover:hover {
     background: var(--primary-light-purple);
+}
+
+/* ── Responsive Utilities ── */
+@media (max-width: 1024px) {
+    :root {
+        --sidebar-width: 80px;
+    }
+}
+
+@media (max-width: 768px) {
+    :root {
+        --sidebar-width: 0px;
+    }
+    
+    h1 { font-size: 24px; }
+    h2 { font-size: 20px; }
+    p { font-size: 14px; }
+    
+    .auth-card {
+        padding: 32px 24px;
+        margin: 20px;
+    }
+}
+
+.show-mobile { display: none; }
+.hide-mobile { display: block; }
+
+@media (max-width: 767px) {
+    .show-mobile { display: block; }
+    .hide-mobile { display: none; }
+}
+
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+canvas {
+    max-width: 100% !important;
 }

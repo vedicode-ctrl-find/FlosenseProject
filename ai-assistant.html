@@ -65,6 +65,11 @@
         <!-- Header -->
         <div class="ai-header">
             <div class="ai-header-inner">
+                <div class="hamburger" onclick="toggleSidebar()" style="display: none; margin-right: 15px;">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
                 <div class="ai-title-block">
                     <div class="ai-icon-wrap">✦</div>
                     <div>
@@ -123,6 +128,7 @@
 
     </main>
 
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
     <script src="js/ai-assistant.js"></script>
 </body>
 </html>

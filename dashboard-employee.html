@@ -70,6 +70,11 @@
     <main class="main-content">
         <!-- Top Bar -->
         <header class="top-bar">
+            <div class="hamburger" onclick="toggleSidebar()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
             <div class="search-bar">
                 <i class="fas fa-search"></i>
                 <input type="text" placeholder="Search tasks, members, or projects...">
@@ -327,6 +332,7 @@
         </div>
     </aside>
 
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
     <script src="js/dashboard-employee.js?v=18"></script>
 </body>
 </html>
