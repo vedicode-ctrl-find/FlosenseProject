@@ -1,5 +1,5 @@
 // Auto-detect environment: empty string on Vercel (same domain), localhost for dev
-const BASE_URL = window.location.hostname === 'localhost' ? '' : '';
+const BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 // ── Application State ──
 // NOTE: employees/projects are intentionally empty — all data comes from the real API.
@@ -1346,7 +1346,7 @@ async function deleteProject(event, pid) {
     showToast('Executing termination protocols...', 'info');
 
     try {
-        const res = await fetch(`/api/projects/${pid}/delete`, { 
+        const res = await fetch(`${BASE_URL}/api/projects/${pid}/delete`, { 
             method: 'POST' 
         });
         const data = await res.json();
@@ -1511,8 +1511,8 @@ async function loadInsightsForProject(projectId) {
     try {
         // Fetch tasks and members in parallel
         const [tasksRes, membersRes] = await Promise.all([
-            fetch(`/api/tasks/project/${projectId}`),
-            fetch(`/api/projects/${projectId}/members`)
+            fetch(`${BASE_URL}/api/tasks/project/${projectId}`),
+            fetch(`${BASE_URL}/api/projects/${projectId}/members`)
         ]);
 
         const tasksData = await tasksRes.json();
@@ -2049,7 +2049,7 @@ async function addNotification(type, title, desc, longDesc, category, projectLin
     if (!companyId) return;
 
     try {
-        const res = await fetch('/api/notifications', {
+        const res = await fetch(`${BASE_URL}/api/notifications`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2185,7 +2185,7 @@ async function markAllRead(e) {
     if (!companyId) return;
 
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
+        const res = await fetch(`${BASE_URL}/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             FlowSenseNotifications.forEach(n => n.read = true);
@@ -2200,7 +2200,7 @@ async function markAllRead(e) {
 async function markAsRead(e, id) {
     if (e) e.stopPropagation();
     try {
-        const res = await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+        const res = await fetch(`${BASE_URL}/api/notifications/${id}/read`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             const n = FlowSenseNotifications.find(x => x.id === id);
@@ -2264,7 +2264,7 @@ async function fetchLiveProfile() {
     if (!id || !role) return;
 
     try {
-        const res = await fetch(`/api/auth/profile/${id}/${role}`);
+        const res = await fetch(`${BASE_URL}/api/auth/profile/${id}/${role}`);
         const data = await res.json();
         if (data.success) {
             const user = data.data;
@@ -2348,7 +2348,7 @@ async function fetchSkillSuggestions(role) {
     if (!container || !group) return;
 
     try {
-        const res = await fetch(`/api/auth/skills/${role}`);
+        const res = await fetch(`${BASE_URL}/api/auth/skills/${role}`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             group.style.display = 'block';
@@ -2474,7 +2474,7 @@ async function handleProfileUpdate(e) {
 
     try {
         console.log('TRANSMITTING IDENTITY SYNC:', { id, role, name, email, role_field: role_val, skills: skills_val });
-        const res = await fetch('/api/auth/profile', {
+        const res = await fetch(`${BASE_URL}/api/auth/profile`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -2514,7 +2514,7 @@ async function handleAvatarUpload(e) {
             const base64 = event.target.result;
             
             try {
-                const res = await fetch('/api/auth/profile', {
+                const res = await fetch(`${BASE_URL}/api/auth/profile`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, role, profile_image: base64 })
@@ -2923,7 +2923,7 @@ async function runDataMigration() {
     try {
         // --- 1. Migrate Companies ---
         document.getElementById('mig-status').textContent = "Migrating Company Profiles...";
-        const compRes = await fetch('/api/messages/companies');
+        const compRes = await fetch(`${BASE_URL}/api/messages/companies`);
         const compData = await compRes.json();
         if (compData.success) {
             let c = 0;
@@ -2942,7 +2942,7 @@ async function runDataMigration() {
 
         // --- 2. Migrate Employees ---
         document.getElementById('mig-status').textContent = "Migrating Employee Profiles...";
-        const empRes = await fetch('/api/messages/employees');
+        const empRes = await fetch(`${BASE_URL}/api/messages/employees`);
         const empData = await empRes.json();
         if (empData.success) {
             let e = 0;
@@ -2961,7 +2961,7 @@ async function runDataMigration() {
 
         // --- 3. Migrate Messages ---
         document.getElementById('mig-status').textContent = "Migrating Chat Archives...";
-        const msgRes = await fetch('/api/messages/all');
+        const msgRes = await fetch(`${BASE_URL}/api/messages/all`);
         const msgData = await msgRes.json();
         if (msgData.success) {
             let m = 0;

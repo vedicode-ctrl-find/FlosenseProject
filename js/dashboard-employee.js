@@ -1,3 +1,6 @@
+// Auto-detect environment: empty string on Vercel (same domain), localhost for dev
+const BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+
 // ── Application State ──
 // NOTE: employees/projects are intentionally empty — all data comes from the real API.
 // DO NOT add mock data here; it causes cross-company data leakage.
@@ -34,7 +37,7 @@ async function fetchLiveEmployees() {
     const token = localStorage.getItem('token');
     if (!token) return [];
     try {
-        const res  = await fetch('/api/team-members', {
+        const res  = await fetch(`${BASE_URL}/api/team-members`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -55,7 +58,7 @@ async function fetchLiveProjects() {
     const companyId = getCompanyId();
     if (!companyId) return [];
     try {
-        const res  = await fetch(`/api/projects/company/${companyId}`);
+        const res  = await fetch(`${BASE_URL}/api/projects/company/${companyId}`);
         const data = await res.json();
         if (data.success) {
             liveData.projects = data.data;
@@ -77,7 +80,7 @@ async function fetchLiveNotifications() {
     const role      = localStorage.getItem('userRole');
     if (!companyId) return;
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
+        const res = await fetch(`${BASE_URL}/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
         const data = await res.json();
         if (data.success) {
             // Map DB fields to UI fields if they differ
@@ -104,7 +107,7 @@ async function fetchLiveTasks() {
     const companyId = getCompanyId();
     if (!companyId) return;
     try {
-        const res = await fetch(`/api/tasks/company/${companyId}`);
+        const res = await fetch(`${BASE_URL}/api/tasks/company/${companyId}`);
         const data = await res.json();
         if (data.success) {
             FlowSenseState.tasks = data.data;
@@ -410,7 +413,7 @@ async function openAssignTaskModal(projectId) {
     
     // Fetch current tasks for this project
     try {
-        const res = await fetch(`/api/tasks/project/${projectId}`);
+        const res = await fetch(`${BASE_URL}/api/tasks/project/${projectId}`);
         const data = await res.json();
         currentProjectTasks = data.success ? data.data : [];
     } catch (e) {
@@ -679,7 +682,7 @@ async function renderAssignTaskModalContent(showForm = false) {
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
 
             try {
-                const res = await fetch('/api/tasks', {
+                const res = await fetch(`${BASE_URL}/api/tasks`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -696,7 +699,7 @@ async function renderAssignTaskModalContent(showForm = false) {
                     showToast('Successfully deployed to employee orbit.', 'success');
                     
                     // RE-FETCH TASKS for real-time board update
-                    const tRes = await fetch(`/api/tasks/project/${currentCreatingProject._id || currentCreatingProject.id}`);
+                    const tRes = await fetch(`${BASE_URL}/api/tasks/project/${currentCreatingProject._id || currentCreatingProject.id}`);
                     const tData = await tRes.json();
                     currentProjectTasks = tData.success ? tData.data : [];
                     
@@ -1975,7 +1978,7 @@ async function deleteProject(event, pid) {
     showToast('Executing termination protocols...', 'info');
 
     try {
-        const res = await fetch(`/api/projects/${pid}/delete`, { 
+        const res = await fetch(`${BASE_URL}/api/projects/${pid}/delete`, { 
             method: 'POST' 
         });
         const data = await res.json();
@@ -2589,7 +2592,7 @@ async function renderTeamStreamSection(projects, currentUserId, isTeamLead = fal
             projects.map(async (proj) => {
                 const projId = proj._id || proj.id;
                 try {
-                    const res  = await fetch(`/api/tasks/project/${projId}`);
+                    const res  = await fetch(`${BASE_URL}/api/tasks/project/${projId}`);
                     const data = await res.json();
                     return {
                         project: proj,
@@ -2734,7 +2737,7 @@ window.toggleTaskMenu = (e, tid) => {
 window.updateTaskStatus = async (tid, newStatus) => {
     showToast('Updating objective status...', 'info');
     try {
-        const res = await fetch(`/api/tasks/${tid}/status`, {
+        const res = await fetch(`${BASE_URL}/api/tasks/${tid}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: newStatus })
@@ -2924,7 +2927,7 @@ async function addNotification(type, title, desc, longDesc, category, projectLin
     if (!companyId) return;
 
     try {
-        const res = await fetch('/api/notifications', {
+        const res = await fetch(`${BASE_URL}/api/notifications`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3067,7 +3070,7 @@ async function markAllRead(e) {
     if (!companyId) return;
 
     try {
-        const res = await fetch(`/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
+        const res = await fetch(`${BASE_URL}/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             FlowSenseNotifications.forEach(n => n.read = true);
@@ -3082,7 +3085,7 @@ async function markAllRead(e) {
 async function markAsRead(e, id) {
     if (e) e.stopPropagation();
     try {
-        const res = await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+        const res = await fetch(`${BASE_URL}/api/notifications/${id}/read`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             const n = FlowSenseNotifications.find(x => x.id === id);
@@ -3146,7 +3149,7 @@ async function fetchLiveProfile() {
     if (!id || !role) return;
 
     try {
-        const res = await fetch(`/api/auth/profile/${id}/${role}`);
+        const res = await fetch(`${BASE_URL}/api/auth/profile/${id}/${role}`);
         const data = await res.json();
         if (data.success) {
             const user = data.data;
@@ -3230,7 +3233,7 @@ async function fetchSkillSuggestions(role) {
     if (!container || !group) return;
 
     try {
-        const res = await fetch(`/api/auth/skills/${role}`);
+        const res = await fetch(`${BASE_URL}/api/auth/skills/${role}`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             group.style.display = 'block';
@@ -3357,7 +3360,7 @@ async function handleProfileUpdate(e) {
 
     try {
         console.log('TRANSMITTING IDENTITY SYNC:', { id, role, name, email, role_field: role_val, skills: skills_val });
-        const res = await fetch('/api/auth/profile', {
+        const res = await fetch(`${BASE_URL}/api/auth/profile`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -3397,7 +3400,7 @@ async function handleAvatarUpload(e) {
             const base64 = event.target.result;
             
             try {
-                const res = await fetch('/api/auth/profile', {
+                const res = await fetch(`${BASE_URL}/api/auth/profile`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, role, profile_image: base64 })

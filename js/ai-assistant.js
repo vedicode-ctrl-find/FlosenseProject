@@ -1,4 +1,5 @@
 // js/ai-assistant.js
+const BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 let companyId = null;
 let userName  = null;
@@ -69,7 +70,7 @@ async function submitQuery() {
     const thinkingEl = appendThinking();
 
     try {
-        const res = await fetch('/api/nl-query', {
+        const res = await fetch(`${BASE_URL}/api/nl-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, company_id: companyId })
