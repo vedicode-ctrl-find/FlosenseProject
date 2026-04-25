@@ -4,10 +4,11 @@
  * Run: node repair_atlas_data.js
  */
 
+require('dotenv').config();
 const { MongoClient, ObjectId } = require('mongodb');
 require('dns').setServers(['8.8.8.8', '8.8.4.4']);
 
-const URI = 'mongodb+srv://ruthran_hackathon:ruthran123@ruthran-cluster.ugg0ceq.mongodb.net/flowsense?retryWrites=true&w=majority&appName=Ruthran-Cluster';
+const URI = process.env.MONGODB_URI;
 
 async function repair() {
     const client = new MongoClient(URI);
