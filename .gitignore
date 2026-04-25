@@ -23,3 +23,18 @@ Thumbs.db
 
 # VS Code
 .vscode/
+
+# MongoDB local backup (migration artifacts, not needed in production)
+mongo-backup/
+migrate_export.js
+migrate_import.js
+check_db_state.js
+fix_origins.js
+fix_origins2.js
+inspect_db.js
+inspect_db2.js
+test_api.js
+test_filter.js
+test_notifs.js
+.vercel
+.env*.local

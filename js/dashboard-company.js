@@ -1,3 +1,6 @@
+// Auto-detect environment: empty string on Vercel (same domain), localhost for dev
+const BASE_URL = window.location.hostname === 'localhost' ? '' : '';
+
 // ── Application State ──
 // NOTE: employees/projects are intentionally empty — all data comes from the real API.
 // DO NOT add mock data here; it causes cross-company data leakage.
@@ -28,7 +31,7 @@ async function fetchLiveEmployees() {
     const token = localStorage.getItem('token');
     if (!token) return [];
     try {
-        const res  = await fetch('http://localhost:5000/api/team-members', {
+        const res  = await fetch(`${BASE_URL}/api/team-members`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -49,7 +52,7 @@ async function fetchLiveProjects() {
     const companyId = getCompanyId();
     if (!companyId) return [];
     try {
-        const res  = await fetch(`http://localhost:5000/api/projects/company/${companyId}`);
+        const res  = await fetch(`${BASE_URL}/api/projects/company/${companyId}`);
         const data = await res.json();
         if (data.success) {
             liveData.projects = data.data;
@@ -70,7 +73,7 @@ async function fetchLiveNotifications() {
     const role      = localStorage.getItem('userRole');
     if (!companyId) return;
     try {
-        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
+        const res = await fetch(`${BASE_URL}/api/notifications/company/${companyId}?userId=${userId}&role=${role}`);
         const data = await res.json();
         if (data.success) {
             // Map DB fields to UI fields if they differ
@@ -503,7 +506,7 @@ async function renderProjectCreationStep() {
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing System...';
 
         try {
-            const res = await fetch('http://localhost:5000/api/projects', {
+            const res = await fetch(`${BASE_URL}/api/projects`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, deadline, description: desc, team_lead: lead, priority: selectedPriority, company_id: companyId })
@@ -658,7 +661,7 @@ async function renderTeamSetupStep() {
         finishBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
 
         try {
-            await fetch(`http://localhost:5000/api/projects/${currentCreatingProject._id}/team`, {
+            await fetch(`${BASE_URL}/api/projects/${currentCreatingProject._id}/team`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ team_members: selectedIds })
@@ -1343,7 +1346,7 @@ async function deleteProject(event, pid) {
     showToast('Executing termination protocols...', 'info');
 
     try {
-        const res = await fetch(`http://localhost:5000/api/projects/${pid}/delete`, { 
+        const res = await fetch(`/api/projects/${pid}/delete`, { 
             method: 'POST' 
         });
         const data = await res.json();
@@ -1508,8 +1511,8 @@ async function loadInsightsForProject(projectId) {
     try {
         // Fetch tasks and members in parallel
         const [tasksRes, membersRes] = await Promise.all([
-            fetch(`http://localhost:5000/api/tasks/project/${projectId}`),
-            fetch(`http://localhost:5000/api/projects/${projectId}/members`)
+            fetch(`/api/tasks/project/${projectId}`),
+            fetch(`/api/projects/${projectId}/members`)
         ]);
 
         const tasksData = await tasksRes.json();
@@ -2046,7 +2049,7 @@ async function addNotification(type, title, desc, longDesc, category, projectLin
     if (!companyId) return;
 
     try {
-        const res = await fetch('http://localhost:5000/api/notifications', {
+        const res = await fetch('/api/notifications', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2182,7 +2185,7 @@ async function markAllRead(e) {
     if (!companyId) return;
 
     try {
-        const res = await fetch(`http://localhost:5000/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
+        const res = await fetch(`/api/notifications/company/${companyId}/read-all`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             FlowSenseNotifications.forEach(n => n.read = true);
@@ -2197,7 +2200,7 @@ async function markAllRead(e) {
 async function markAsRead(e, id) {
     if (e) e.stopPropagation();
     try {
-        const res = await fetch(`http://localhost:5000/api/notifications/${id}/read`, { method: 'PUT' });
+        const res = await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
         const data = await res.json();
         if (data.success) {
             const n = FlowSenseNotifications.find(x => x.id === id);
@@ -2261,7 +2264,7 @@ async function fetchLiveProfile() {
     if (!id || !role) return;
 
     try {
-        const res = await fetch(`http://localhost:5000/api/auth/profile/${id}/${role}`);
+        const res = await fetch(`/api/auth/profile/${id}/${role}`);
         const data = await res.json();
         if (data.success) {
             const user = data.data;
@@ -2345,7 +2348,7 @@ async function fetchSkillSuggestions(role) {
     if (!container || !group) return;
 
     try {
-        const res = await fetch(`http://localhost:5000/api/auth/skills/${role}`);
+        const res = await fetch(`/api/auth/skills/${role}`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             group.style.display = 'block';
@@ -2471,7 +2474,7 @@ async function handleProfileUpdate(e) {
 
     try {
         console.log('TRANSMITTING IDENTITY SYNC:', { id, role, name, email, role_field: role_val, skills: skills_val });
-        const res = await fetch('http://localhost:5000/api/auth/profile', {
+        const res = await fetch('/api/auth/profile', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -2511,7 +2514,7 @@ async function handleAvatarUpload(e) {
             const base64 = event.target.result;
             
             try {
-                const res = await fetch('http://localhost:5000/api/auth/profile', {
+                const res = await fetch('/api/auth/profile', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, role, profile_image: base64 })
@@ -2920,7 +2923,7 @@ async function runDataMigration() {
     try {
         // --- 1. Migrate Companies ---
         document.getElementById('mig-status').textContent = "Migrating Company Profiles...";
-        const compRes = await fetch('http://localhost:5000/api/messages/companies');
+        const compRes = await fetch('/api/messages/companies');
         const compData = await compRes.json();
         if (compData.success) {
             let c = 0;
@@ -2939,7 +2942,7 @@ async function runDataMigration() {
 
         // --- 2. Migrate Employees ---
         document.getElementById('mig-status').textContent = "Migrating Employee Profiles...";
-        const empRes = await fetch('http://localhost:5000/api/messages/employees');
+        const empRes = await fetch('/api/messages/employees');
         const empData = await empRes.json();
         if (empData.success) {
             let e = 0;
@@ -2958,7 +2961,7 @@ async function runDataMigration() {
 
         // --- 3. Migrate Messages ---
         document.getElementById('mig-status').textContent = "Migrating Chat Archives...";
-        const msgRes = await fetch('http://localhost:5000/api/messages/all');
+        const msgRes = await fetch('/api/messages/all');
         const msgData = await msgRes.json();
         if (msgData.success) {
             let m = 0;
