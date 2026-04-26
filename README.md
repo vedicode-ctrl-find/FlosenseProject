@@ -135,8 +135,8 @@ FlowSense is built on a modern, scalable stack designed for high-performance and
 
 ## 👨‍💻 Team / Author
 
-*   **Rudranan Arulmani** — Lead Full-Stack Developer & AI Architect
-*   *(Add other team members here)*
+*   **Rudranan Arulmani**
+*   **Vedika Warge**
 
 ---
 
