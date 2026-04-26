@@ -1885,7 +1885,6 @@ function renderTeamCard(e) {
         </div>
         <div style="padding:16px 20px; background:rgba(255,255,255,0.3); border-top:1px solid var(--gray-50); display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:11px; font-weight:700; color:var(--gray-500);">${statusLabel}</span>
-            <button class="btn-primary" style="padding:5px 12px; font-size:10px; border-radius:6px; font-weight:800; letter-spacing:0.5px;" onclick="selectDirectChat('${e._id || e.id}', '${e.name.replace(/'/g, "\\'")}')">MESSAGE</button>
         </div>
     </div>
     `;
