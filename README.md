@@ -1,4 +1,4 @@
-# 🌊 FlowSense – Intelligent Team Optimization System
+#  FlowSense – Intelligent Team Optimization System
 
 > **AI-powered system to optimize team workload, prevent burnout, and improve project efficiency.**
 
