@@ -1,4 +1,4 @@
-#  FlowSense – Intelligent Team Optimization System
+# 🌊 FlowSense – Intelligent Team Optimization System
 
 > **AI-powered system to optimize team workload, prevent burnout, and improve project efficiency.**
 
@@ -18,6 +18,7 @@ In today's fast-paced corporate environment, traditional project management tool
 *   **Static Decision Support:** Assigning tasks is usually a guessing game based on who "looks" free, rather than data-driven capacity analysis.
 *   **Communication Gaps:** Project discussions are scattered across emails and multiple chat apps, losing critical context.
 
+
 ---
 
 ## 💡 Solution Overview
@@ -28,6 +29,8 @@ In today's fast-paced corporate environment, traditional project management tool
 *   **Workload Balancing:** Uses a proprietary algorithm to detect potential overloads before they happen.
 *   **Real-time Communication:** Integrated project-specific and direct chat channels to keep everyone aligned.
 *   **AI-Based Insights:** A natural language assistant that understands your team's state and answers complex operational queries.
+
+* FlowSense promotes efficient work distribution, prevents employee burnout, and enhances productivity, aligning with UN SDG 8.
 
 ---
 
@@ -80,12 +83,25 @@ FlowSense is built on a modern, scalable stack designed for high-performance and
 
 ---
 
+## 📊 Screens / Demo
+
+| Dashboard | Task Management |
+| :---: | :---: |
+| ![Dashboard](./assets/dashboard.png) | ![Task Assignment](./assets/task_assignment.png) |
+
+| AI Assistant | Real-time Chat |
+| :---: | :---: |
+| ![AI Query](./assets/ai_query.png) | ![Chat](./assets/chat.png) |
+
+*(Note: Screenshots are representative of the current prototype interface)*
+
+---
 
 ## 🔗 Live Links
 
-*   🚀 **[MVP Live Link](https://flow-sense.vercel.app)**
-*   🛠️ **[Prototype Demo](https://flow-sense-proto.vercel.app)**
-*   📺 **[Product Walkthrough Video](https://youtube.com/link-to-demo)**
+*   🚀 **[MVP Live Link](https://flosense-project-mvp.vercel.app/)**
+*   🛠️ **[Prototype Demo](https://flosense-project.vercel.app/)**
+*   📺 **[Product Walkthrough Video](https://drive.google.com/file/d/1v4JSv8DW7l7fNHsj4q9GaHJn6mbwYBSv/view?usp=sharing)**
 
 ---
 
