@@ -1,4 +1,4 @@
-# 🌊 FlowSense – Intelligent Team Optimization System
+#  FlowSense – Intelligent Team Optimization System
 
 > **AI-powered system to optimize team workload, prevent burnout, and improve project efficiency.**
 
@@ -87,11 +87,11 @@ FlowSense is built on a modern, scalable stack designed for high-performance and
 
 | Dashboard | Task Management |
 | :---: | :---: |
-| ![Dashboard](./assets/dashboard.png) | ![Task Assignment](./assets/task_assignment.png) |
+| ![Dashboard](./assets/dashboard.jpeg) | ![Task Assignment](./assets/mytasks.jpeg) |
 
 | AI Assistant | Real-time Chat |
 | :---: | :---: |
-| ![AI Query](./assets/ai_query.png) | ![Chat](./assets/chat.png) |
+| ![AI Assistant](./assets/aiassistant.jpeg) | ![Chat](./assets/chatsystem.jpeg) |
 
 *(Note: Screenshots are representative of the current prototype interface)*
 
