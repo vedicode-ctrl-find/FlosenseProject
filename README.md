@@ -80,19 +80,6 @@ FlowSense is built on a modern, scalable stack designed for high-performance and
 
 ---
 
-## 📊 Screens / Demo
-
-| Dashboard | Task Management |
-| :---: | :---: |
-| ![Dashboard](./assets/dashboard.png) | ![Task Assignment](./assets/task_assignment.png) |
-
-| AI Assistant | Real-time Chat |
-| :---: | :---: |
-| ![AI Query](./assets/ai_query.png) | ![Chat](./assets/chat.png) |
-
-*(Note: Screenshots are representative of the current prototype interface)*
-
----
 
 ## 🔗 Live Links
 
